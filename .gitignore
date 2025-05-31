@@ -3,15 +3,18 @@
 /.pnp
 .pnp.js
 
-# Testing
-/coverage
-
-# Production
-/build
+# Build
 /dist
+/build
+/electron-dist
+/release
+*.exe
+*.dll
+*.pak
+*.dat
+*.bin
 
-# Misc
-.DS_Store
+# Environment
 .env
 .env.local
 .env.development.local
@@ -24,10 +27,14 @@ yarn-debug.log*
 yarn-error.log*
 
 # IDE
-.idea/
-.vscode/
-*.swp
-*.swo
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
-# Sistema operacional
+# OS
+.DS_Store
 Thumbs.db
