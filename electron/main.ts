@@ -71,7 +71,7 @@ async function getWindowsPrinters() {
           isDefault: defaultStr === 'TRUE'
         };
       })
-      .filter(Boolean);
+      .filter((p): p is { name: string; status: string; isDefault: boolean } => p !== null);
 
     // Verifica se há algum leitor de PDF instalado
     const commonPDFReaders = [
