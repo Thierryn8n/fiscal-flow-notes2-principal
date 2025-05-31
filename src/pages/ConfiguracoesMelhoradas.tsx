@@ -19,19 +19,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { v4 as uuidv4 } from 'uuid';
 
-import {
-  loadSettings as loadSupabaseSettings,
-  saveSettings as saveSupabaseSettings,
-  uploadCompanyLogo as uploadSupabaseCompanyLogo,
-  removeCompanyLogo as removeSupabaseCompanyLogo,
-  UserSettings as SupabaseUserSettings,
-  CompanyData as SupabaseCompanyData,
-  InstallmentFee as SupabaseInstallmentFee,
-  DeliverySettings as SupabaseDeliverySettings,
-  DeliveryRadius as SupabaseDeliveryRadius,
-  PrinterSettings as SupabasePrinterSettings
-} from '@/lib/supabaseSettings';
-
 // Local interface for installment fees (with local ID for UI management)
 interface LocalInstallmentFee {
   id: string;
@@ -249,7 +236,7 @@ const SettingsNew = () => {
                         onClick={() => handleRemoveFee(fee.id)}
                         className="text-gray-500 hover:text-red-600 p-1"
                       >
-                        <Trash2 size={18} />
+                        <Trash2 size={16} />
                       </button>
                     </div>
                   ))}

@@ -1,7 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { v4 as uuidv4 } from 'uuid';
 import { supabasePublic, getPublicProducts, getPublicCategories, getPublicStoreSettings } from '@/integrations/supabase/publicClient';
-import type { Database } from '@/integrations/supabase/types';
+import type { Database } from '@/types/supabase';
 import { Database as SupabaseDatabase } from '@/types/supabase';
 
 /**
@@ -22,29 +22,20 @@ import { Database as SupabaseDatabase } from '@/types/supabase';
  * Isso permitirá que usuários não autenticados acessem os dados dessas tabelas.
  */
 
-export interface EcommerceProduct {
-  id: string;
-  name: string;
-  code: string;
-  description?: string;
-  price: number;
-  imageUrl?: string;
-  image_path?: string;
-  ncm?: string;
-  unit?: string;
-  quantity: number;
-  total_amount?: number;
-  category_id?: string;
-  owner_id: string;
+type Tables = Database['public']['Tables'];
+type EcommerceProductRow = Tables['ecommerce_products']['Row'];
+type OrderKanbanRow = Tables['orders_kanban']['Row'];
+type CustomerRow = Tables['customers']['Row'];
+type SellerRow = Tables['sellers']['Row'];
+
+export type OrderStatus = 'pending' | 'processing' | 'completed' | 'cancelled';
+
+export interface EcommerceProduct extends Omit<EcommerceProductRow, 'created_at' | 'updated_at'> {
   created_at?: string;
   updated_at?: string;
 }
 
-export interface Category {
-  id: string;
-  name: string;
-  description?: string;
-  icon?: string;
+export interface Category extends Omit<Tables['ecommerce_categories']['Row'], 'created_at' | 'updated_at'> {
   createdAt?: string;
   updatedAt?: string;
 }
@@ -116,35 +107,21 @@ export interface ProductReview {
 }
 
 // Interface para Vendedores
-export interface Seller {
-  id: string;
-  owner_id: string;
-  full_name: string;
-  phone: string;
-  email?: string | null;
+export interface Seller extends Omit<SellerRow, 'active' | 'auth_user_id'> {
   active?: boolean | null;
-  image_path?: string | null; // Adicionado para a imagem do vendedor
-  // outros campos da tabela sellers podem ser adicionados aqui se necessário
+  auth_user_id?: string | null;
 }
 
 // Interface para Clientes (baseado na migração 20230603000000_create_customers_table.sql)
-export interface Customer {
-  id: string;
-  name: string;
-  phone: string;
-  email?: string | null;
+export interface Customer extends Omit<CustomerRow, 'address'> {
   address?: {
     street?: string;
     number?: string;
     neighborhood?: string;
     city?: string;
     state?: string;
-    zipCode?: string; // CEP
+    zipCode?: string;
   } | null;
-  signature?: string | null;
-  owner_id: string;
-  created_at?: string;
-  updated_at?: string;
 }
 
 export interface NewCustomerData {
@@ -163,8 +140,6 @@ export interface NewCustomerData {
 }
 
 // Interfaces para o sistema Kanban
-export type OrderStatus = 'pending' | 'processing' | 'completed' | 'cancelled';
-
 export interface OrderKanban {
   id: string;
   customer_id: string;
@@ -175,8 +150,8 @@ export interface OrderKanban {
   seller_name: string;
   status: OrderStatus;
   notes?: string;
-  owner_id: string;
   total_amount?: number;
+  owner_id: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -201,7 +176,7 @@ export interface DashboardOverviewData {
   topProducts: {
     name: string;
     revenue: number;
-    quantity: number;
+    orders: number;
   }[];
   recentOrders: {
     id: string;
@@ -211,6 +186,12 @@ export interface DashboardOverviewData {
     product_name: string;
     total_amount?: number;
   }[];
+  salesByStatus: {
+    [key in OrderStatus]: {
+      count: number;
+      revenue: number;
+    };
+  };
 }
 
 type PublicProductsReturnType = Awaited<ReturnType<typeof getPublicProducts>>;
@@ -226,7 +207,6 @@ const mapSupabaseProduct = (data: any): EcommerceProduct => ({
   code: data.code,
   description: data.description || '',
   price: data.price,
-  imageUrl: data.image_path || '',
   image_path: data.image_path,
   ncm: data.ncm || '',
   unit: data.unit || '',
@@ -268,14 +248,14 @@ const mapSupabaseOrder = (data: any): OrderKanban => ({
   seller_name: data.seller_name,
   status: data.status as OrderStatus,
   notes: data.notes || undefined,
-  owner_id: data.owner_id,
   total_amount: data.total_amount,
+  owner_id: data.owner_id,
   created_at: data.created_at || undefined,
   updated_at: data.updated_at || undefined
 });
 
 export class EcommerceService {
-  private static readonly PRODUCTS_TABLE = 'ecommerce_products';
+  private static readonly PRODUCTS_TABLE = 'ecommerce_products' as const;
   private static readonly CATEGORIES_TABLE = 'ecommerce_categories';
   private static readonly SETTINGS_TABLE = 'ecommerce_settings';
   private static readonly REVIEWS_TABLE = 'product_reviews';
@@ -286,39 +266,35 @@ export class EcommerceService {
   private static readonly CACHE_EXPIRY = 5 * 60 * 1000;
   private static readonly SELLERS_TABLE = 'sellers';
   private static readonly CUSTOMERS_TABLE = 'customers';
-  private static readonly ORDERS_KANBAN_TABLE = 'orders_kanban';
+  private static readonly ORDERS_TABLE = 'orders_kanban' as const;
   
   // Produtos
-  static async getProducts(page: number = 1, limit: number = 10, searchTerm?: string, category_id?: string): Promise<{ data: EcommerceProduct[]; count: number }> {
-    try {
-      const start = (page - 1) * limit;
-      const end = start + limit - 1;
+  static async getProducts(ownerId: string): Promise<EcommerceProduct[]> {
+    const { data, error } = await supabase
+      .from(this.PRODUCTS_TABLE)
+      .select('*')
+      .eq('owner_id', ownerId);
 
-      let query = supabase
-        .from(this.PRODUCTS_TABLE)
-        .select('*', { count: 'exact' })
-        .range(start, end);
-
-      if (searchTerm) {
-        query = query.or(`name.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%`);
-      }
-
-      if (category_id) {
-        query = query.eq('category_id', category_id);
-      }
-
-      const { data, error, count } = await query;
-
-      if (error) throw error;
-
-      return {
-        data: (data || []).map(mapSupabaseProduct),
-        count: count || 0
-      };
-    } catch (error) {
-      console.error('Error fetching products:', error);
-      return { data: [], count: 0 };
+    if (error) {
+      throw error;
     }
+
+    return (data as EcommerceProductRow[]).map(product => ({
+      id: product.id,
+      name: product.name,
+      code: product.code,
+      description: product.description || undefined,
+      price: product.price,
+      image_path: product.image_path || undefined,
+      ncm: product.ncm || undefined,
+      unit: product.unit || undefined,
+      quantity: product.quantity,
+      total_amount: product.total_amount || undefined,
+      category_id: product.category_id || undefined,
+      owner_id: product.owner_id,
+      created_at: product.created_at || undefined,
+      updated_at: product.updated_at || undefined
+    }));
   }
   
   static async getProductById(id: string): Promise<EcommerceProduct | null> {
@@ -490,7 +466,7 @@ export class EcommerceService {
           name: product.name,
           price: product.price,
           quantity: quantity,
-          imageUrl: product.imageUrl,
+          imageUrl: product.image_path || '',
           unit: product.unit,
           subtotal: product.price * quantity
         };
@@ -687,130 +663,95 @@ export class EcommerceService {
     }
   }
 
-  static async getOrdersKanban(userId: string): Promise<OrderKanban[]> {
-    try {
-      const { data, error } = await supabase
-        .from('orders_kanban')
-        .select('*')
-        .eq('owner_id', userId);
+  static async getOrders(ownerId: string): Promise<OrderKanban[]> {
+    const { data, error } = await supabase
+      .from(this.ORDERS_TABLE)
+      .select('*')
+      .eq('owner_id', ownerId);
 
-      if (error) throw error;
-      return (data || []).map(mapSupabaseOrder);
-    } catch (error) {
-      console.error('Error fetching orders kanban:', error);
-      return [];
+    if (error) {
+      throw error;
     }
+
+    return (data as OrderKanbanRow[]).map(order => ({
+      id: order.id,
+      customer_id: order.customer_id,
+      customer_name: order.customer_name,
+      product_id: order.product_id,
+      product_name: order.product_name,
+      seller_id: order.seller_id,
+      seller_name: order.seller_name,
+      status: order.status,
+      notes: order.notes || undefined,
+      total_amount: order.total_amount || undefined,
+      owner_id: order.owner_id,
+      created_at: order.created_at || undefined,
+      updated_at: order.updated_at || undefined
+    }));
   }
 
-  static async updateOrderStatus(orderId: string, status: OrderStatus): Promise<OrderKanban | null> {
-    try {
-      const { data, error } = await supabase
-        .from('orders_kanban')
-        .update({ status })
-        .eq('id', orderId)
-        .select()
-        .single();
+  static async getDashboardOverview(ownerId: string): Promise<DashboardOverviewData> {
+    const allOrders = await this.getOrders(ownerId);
+    
+    // Calcular métricas
+    const totalRevenue = allOrders.reduce((sum, o) => sum + (o.total_amount || 0), 0);
+    const totalOrders = allOrders.length;
+    const averageOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
-      if (error) throw error;
-      return data ? mapSupabaseOrder(data) : null;
-    } catch (error) {
-      console.error('Error updating order status:', error);
-      return null;
-    }
-  }
-
-  static async getOrderKanbanById(orderId: string): Promise<OrderKanban | null> {
-    try {
-      const { data, error } = await supabase
-        .from('orders_kanban')
-        .select('*')
-        .eq('id', orderId)
-        .single();
-
-      if (error) {
-        console.error('Erro ao buscar detalhes do pedido:', error);
-        return null;
+    // Agrupar por status
+    const salesByStatus = allOrders.reduce((acc, order) => {
+      const status = order.status;
+      if (!acc[status]) {
+        acc[status] = { count: 0, revenue: 0 };
       }
+      acc[status].count++;
+      acc[status].revenue += order.total_amount || 0;
+      return acc;
+    }, {} as { [key in OrderStatus]: { count: number; revenue: number } });
 
-      return data;
-    } catch (error) {
-      console.error('Erro ao buscar detalhes do pedido:', error);
-      return null;
-    }
+    // Top produtos
+    const productStats = allOrders.reduce((acc, order) => {
+      if (!acc[order.product_name]) {
+        acc[order.product_name] = { revenue: 0, orders: 0 };
+      }
+      acc[order.product_name].orders++;
+      acc[order.product_name].revenue += order.total_amount || 0;
+      return acc;
+    }, {} as { [key: string]: { revenue: number; orders: number } });
+
+    const topProducts = Object.entries(productStats)
+      .map(([name, stats]) => ({
+        name,
+        revenue: stats.revenue,
+        orders: stats.orders
+      }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 5);
+
+    // Pedidos recentes
+    const recentOrders = allOrders
+      .sort((a, b) => {
+        const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return dateB - dateA;
+      })
+      .slice(0, 5)
+      .map(order => ({
+        id: order.id,
+        customer_name: order.customer_name,
+        created_at: order.created_at,
+        status: order.status,
+        product_name: order.product_name,
+        total_amount: order.total_amount
+      }));
+
+    return {
+      totalRevenue,
+      totalOrders,
+      averageOrderValue,
+      topProducts,
+      recentOrders,
+      salesByStatus
+    };
   }
-
-  // =============================================================================================
-  // FUNÇÃO PARA BUSCAR DADOS DA VISÃO GERAL DO DASHBOARD
-  // =============================================================================================
-  static async getDashboardOverview(userId: string): Promise<DashboardOverviewData> {
-    try {
-      // Buscar todos os pedidos do usuário
-      const { data: orders, error: ordersError } = await supabase
-        .from('orders_kanban')
-        .select('*')
-        .eq('owner_id', userId);
-
-      if (ordersError) throw ordersError;
-
-      const allOrders = orders || [];
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      // Calcular métricas
-      const totalOrders = allOrders.length;
-      const totalRevenue = allOrders.reduce((sum, o) => sum + (o.total_amount || 0), 0);
-      const averageOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
-
-      // Agrupar produtos por nome e calcular receita total
-      const productStats = allOrders.reduce((acc, order) => {
-        const key = order.product_name;
-        if (!acc[key]) {
-          acc[key] = {
-            name: key,
-            revenue: 0,
-            quantity: 0
-          };
-        }
-        acc[key].revenue += order.total_amount || 0;
-        acc[key].quantity += 1;
-        return acc;
-      }, {} as Record<string, { name: string; revenue: number; quantity: number }>);
-
-      // Ordenar produtos por receita
-      const topProducts = Object.values(productStats)
-        .sort((a, b) => b.revenue - a.revenue)
-        .slice(0, 5);
-
-      // Buscar pedidos recentes
-      const recentOrders = allOrders
-        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
-        .slice(0, 5)
-        .map(order => ({
-          id: order.id,
-          customer_name: order.customer_name,
-          created_at: order.created_at,
-          status: order.status,
-          product_name: order.product_name,
-          total_amount: order.total_amount || 0
-        }));
-
-      return {
-        totalRevenue,
-        totalOrders,
-        averageOrderValue,
-        topProducts,
-        recentOrders
-      };
-    } catch (error) {
-      console.error('Error fetching dashboard overview:', error);
-      return {
-        totalRevenue: 0,
-        totalOrders: 0,
-        averageOrderValue: 0,
-        topProducts: [],
-        recentOrders: []
-      };
-    }
-  }
-  // =============================================================================================
 } 

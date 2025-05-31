@@ -2,19 +2,27 @@ import React, { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
 import { Users, Plus, Trash2, MapPin, Search, Phone, User, Save, X, Info } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import type { Database } from '@/types/supabase';
+
+type Tables = Database['public']['Tables'];
+type CustomerRow = Tables['customers']['Row'];
+
+interface CustomerAddress {
+  street: string;
+  number: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+  zipCode: string;
+}
 
 interface Customer {
   id: string;
   name: string;
-  address: {
-    street: string;
-    number: string;
-    neighborhood: string;
-    city: string;
-    state: string;
-    zipCode: string;
-  };
   phone: string;
+  address: CustomerAddress;
+  email?: string | null;
+  owner_id: string;
 }
 
 const CustomerManagement: React.FC = () => {
@@ -138,41 +146,27 @@ const CustomerManagement: React.FC = () => {
   
   return (
     <Layout>
-      <div className="container mx-auto px-4 py-6 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAwIDEwIEwgNDAgMTAgTSAxMCAwIEwgMTAgNDAgTSAwIDIwIEwgNDAgMjAgTSAyMCAwIEwgMjAgNDAgTSAwIDMwIEwgNDAgMzAgTSAzMCAwIEwgMzAgNDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2UyZThmMCIgb3BhY2l0eT0iMC4zIiBzdHJva2Utd2lkdGg9IjEiLz48L3BhdHRlcm4+PC9kZWZzPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InVybCgjZ3JpZCkiLz48L3N2Zz4=')]">
-        <div className="space-y-4 animate-fadeIn px-2 sm:px-4">
-          <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-gray-100 mb-4 sm:mb-6">
-            <div className="flex flex-col sm:flex-row justify-between sm:items-center">
-              <h2 className="text-xl sm:text-2xl font-cascadia mb-4 sm:mb-0 flex items-center">
-                <span className="bg-fiscal-green-500 text-white p-1.5 sm:p-2 rounded-lg mr-2 sm:mr-3 flex-shrink-0">
-                  <Users size={18} className="sm:size-20" />
-                </span>
+      <div className="container mx-auto px-4 py-6">
+        <div className="space-y-4">
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-bold flex items-center">
+                <Users size={24} className="mr-3 text-green-600" />
                 Gerenciamento de Clientes
               </h2>
-              
-              <div className="flex items-center space-x-3">
-                <button
-                  onClick={() => setIsFormOpen(!isFormOpen)}
-                  className={`${isFormOpen ? 'btn-secondary' : 'btn-primary'} rounded-full flex items-center px-3 sm:px-5 py-2 text-sm sm:text-base`}
-                >
-                  {isFormOpen ? (
-                    <>
-                      <X size={16} className="mr-1 sm:mr-2" />
-                      Cancelar
-                    </>
-                  ) : (
-                    <>
-                      <Plus size={16} className="mr-1 sm:mr-2" />
-                      Novo Cliente
-                    </>
-                  )}
-                </button>
-              </div>
+              <button
+                onClick={() => setIsFormOpen(!isFormOpen)}
+                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center"
+              >
+                {isFormOpen ? <X size={20} className="mr-2" /> : <Plus size={20} className="mr-2" />}
+                {isFormOpen ? 'Cancelar' : 'Novo Cliente'}
+              </button>
             </div>
           </div>
-          
-          {/* Add Customer Form */}
+
+          {/* Formulário de adição/edição */}
           {isFormOpen && (
-            <div className="bg-white p-4 sm:p-6 rounded-xl border border-gray-200 shadow-sm mb-4 sm:mb-6 animate-fadeIn">
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
               <div className="flex items-center mb-4">
                 <span className="bg-fiscal-green-500 text-white p-1.5 sm:p-2 rounded-lg mr-2 sm:mr-3 flex-shrink-0">
                   <Plus size={16} className="sm:size-20" />
@@ -328,7 +322,7 @@ const CustomerManagement: React.FC = () => {
           )}
           
           {/* Search Bar */}
-          <div className="bg-white p-4 sm:p-6 rounded-xl border border-gray-200 shadow-sm mb-4 sm:mb-6">
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
             <div className="relative">
               <div className="absolute left-3 top-1/2 transform -translate-y-1/2">
                 <Search size={18} className="text-gray-400" />
@@ -343,8 +337,8 @@ const CustomerManagement: React.FC = () => {
             </div>
           </div>
           
-          {/* Customers List */}
-          <div>
+          {/* Lista de clientes */}
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
             {filteredCustomers.length > 0 ? (
               <div className="grid grid-cols-1 gap-4">
                 {filteredCustomers.map(customer => (

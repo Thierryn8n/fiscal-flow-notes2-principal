@@ -40,21 +40,22 @@ import {
 } from "@/components/ui/dialog";
 import { DialogOverlay } from '@radix-ui/react-dialog';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { Database } from '@/types/supabase';
+import type { Database } from '@/types/supabase';
 
-type SupabaseSeller = Database['public']['Tables']['sellers']['Row'];
+type Tables = Database['public']['Tables'];
+type SellerRow = Tables['sellers']['Row'];
 
-interface Seller {
+interface Seller extends Omit<SellerRow, 'active' | 'auth_user_id'> {
   id: string;
   full_name: string;
-  email?: string;
+  email?: string | null;
   phone: string;
-  image_path?: string;
-  active: boolean;
-  auth_user_id?: string;
+  image_path?: string | null;
+  active?: boolean | null;
+  auth_user_id?: string | null;
   owner_id: string;
-  created_at?: string;
-  updated_at?: string;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 // Interface para cadastrar/editar vendedor
@@ -929,7 +930,7 @@ const SellersManagement: React.FC = () => {
     });
   };
 
-  const mapSupabaseSeller = (data: SupabaseSeller): Seller => ({
+  const mapSupabaseSeller = (data: SellerRow): Seller => ({
     id: data.id,
     full_name: data.full_name,
     email: data.email || undefined,

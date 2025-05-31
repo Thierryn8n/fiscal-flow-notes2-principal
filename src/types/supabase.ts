@@ -4,7 +4,7 @@ export type Json =
   | boolean
   | null
   | { [key: string]: Json | undefined }
-  | Json[]
+  | Json[];
 
 export interface Database {
   public: {
@@ -25,6 +25,38 @@ export interface Database {
           owner_id: string;
           created_at: string | null;
           updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          code: string;
+          description?: string | null;
+          price: number;
+          image_path?: string | null;
+          ncm?: string | null;
+          unit?: string | null;
+          quantity: number;
+          total_amount?: number | null;
+          category_id?: string | null;
+          owner_id: string;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          code?: string;
+          description?: string | null;
+          price?: number;
+          image_path?: string | null;
+          ncm?: string | null;
+          unit?: string | null;
+          quantity?: number;
+          total_amount?: number | null;
+          category_id?: string | null;
+          owner_id?: string;
+          created_at?: string | null;
+          updated_at?: string | null;
         };
       };
       ecommerce_categories: {
@@ -73,10 +105,40 @@ export interface Database {
           seller_name: string;
           status: 'pending' | 'processing' | 'completed' | 'cancelled';
           notes: string | null;
-          owner_id: string;
           total_amount: number | null;
+          owner_id: string;
           created_at: string | null;
           updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          customer_id: string;
+          customer_name: string;
+          product_id: string;
+          product_name: string;
+          seller_id: string;
+          seller_name: string;
+          status: 'pending' | 'processing' | 'completed' | 'cancelled';
+          notes?: string | null;
+          total_amount?: number | null;
+          owner_id: string;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          customer_id?: string;
+          customer_name?: string;
+          product_id?: string;
+          product_name?: string;
+          seller_id?: string;
+          seller_name?: string;
+          status?: 'pending' | 'processing' | 'completed' | 'cancelled';
+          notes?: string | null;
+          total_amount?: number | null;
+          owner_id?: string;
+          created_at?: string | null;
+          updated_at?: string | null;
         };
       };
       customers: {

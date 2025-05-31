@@ -1,5 +1,9 @@
 import { supabase } from '@/integrations/supabase/client';
-import { Json } from '@/types/supabase';
+import type { Database } from '@/types/supabase';
+
+type Tables = Database['public']['Tables'];
+type CustomerRow = Tables['customers']['Row'];
+type Json = Database['public']['Tables']['customers']['Row']['address'];
 
 /* 
  * Serviço de Clientes - Parte do sistema Fiscal Flow
@@ -19,12 +23,12 @@ export interface Customer {
   id: string;
   name: string;
   phone: string;
-  email?: string;
-  address?: CustomerAddress;
-  signature?: string;
+  email: string | null;
+  address: CustomerAddress | null;
+  signature: string | null;
   owner_id: string;
-  created_at?: string;
-  updated_at?: string;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 export interface CustomerFilters {
@@ -36,12 +40,38 @@ export interface CustomerFilters {
 export interface PaginatedResponse<T> {
   data: T[];
   count: number;
-  pageInfo?: {
+  pageInfo: {
     page: number;
     pageSize: number;
     totalPages: number;
   };
 }
+
+const mapCustomerAddress = (address: Json): CustomerAddress | null => {
+  if (!address || typeof address !== 'object') return null;
+  
+  return {
+    street: (address as any).street || '',
+    number: (address as any).number || '',
+    complement: (address as any).complement,
+    neighborhood: (address as any).neighborhood || '',
+    city: (address as any).city || '',
+    state: (address as any).state || '',
+    zipcode: (address as any).zipcode || ''
+  };
+};
+
+const mapCustomerFromSupabase = (data: CustomerRow): Customer => ({
+  id: data.id,
+  name: data.name,
+  phone: data.phone,
+  email: data.email,
+  address: mapCustomerAddress(data.address),
+  signature: data.signature,
+  owner_id: data.owner_id,
+  created_at: data.created_at,
+  updated_at: data.updated_at
+});
 
 export class CustomersService {
   // Tabela no Supabase
@@ -139,83 +169,56 @@ export class CustomersService {
   /**
    * Busca todos os clientes com base nos filtros
    */
-  static async getCustomers(
-    filters?: CustomerFilters
-  ): Promise<PaginatedResponse<Customer>> {
-    try {
-      const page = filters?.page || 1;
-      const pageSize = filters?.pageSize || 20;
-      
-      // Verificar usuário autenticado
-      const session = await supabase.auth.getSession();
-      if (!session.data.session?.user?.id) {
-        throw new Error('Usuário não autenticado');
-      }
-      
-      let query = supabase
-        .from(this.TABLE_NAME)
-        .select('*', { count: 'exact' });
-      
-      // Aplicar filtro de termo de busca
-      if (filters?.searchTerm) {
-        query = query.or(
-          `name.ilike.%${filters.searchTerm}%,phone.ilike.%${filters.searchTerm}%`
-        );
-      }
-      
-      // Aplicar paginação
-      const from = (page - 1) * pageSize;
-      const to = from + pageSize - 1;
-      
-      query = query
-        .order('name', { ascending: true })
-        .range(from, to);
-      
-      // Executar a consulta
-      const { data, error, count } = await query;
-      
-      if (error) throw error;
-      
-      const customers = data?.map(this.mapCustomerFromSupabase) || [];
-      const totalCount = count || 0;
-      
-      return {
-        data: customers,
-        count: totalCount,
+  static async getCustomers(filters: CustomerFilters = {}): Promise<PaginatedResponse<Customer>> {
+    const { page = 1, pageSize = 10, searchTerm } = filters;
+    const start = (page - 1) * pageSize;
+    const end = start + pageSize - 1;
+
+    let query = supabase
+      .from('customers')
+      .select('*', { count: 'exact' })
+      .range(start, end);
+
+    if (searchTerm) {
+      query = query.or(`name.ilike.%${searchTerm}%,phone.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`);
+    }
+
+    const { data, error, count } = await query;
+
+    if (error) {
+      throw error;
+    }
+
+    return {
+      data: (data as CustomerRow[]).map(mapCustomerFromSupabase),
+      count: count || 0,
+      pageInfo: {
         page,
         pageSize,
-        totalPages: Math.ceil(totalCount / pageSize)
-      };
-    } catch (error) {
-      console.error('Erro ao buscar clientes:', error);
-      return {
-        data: [],
-        count: 0,
-        page: 1,
-        pageSize: 20,
-        totalPages: 0
-      };
-    }
+        totalPages: Math.ceil((count || 0) / pageSize)
+      }
+    };
   }
 
   /**
    * Busca um cliente específico pelo ID
    */
   static async getCustomerById(id: string): Promise<Customer | null> {
-    try {
-      const { data, error } = await supabase
-        .from(this.TABLE_NAME)
-        .select('*')
-        .eq('id', id)
-        .single();
+    const { data, error } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('id', id)
+      .single();
 
-      if (error) throw error;
-      
-      return this.mapCustomerFromSupabase(data);
-    } catch (error) {
-      console.error('Erro ao buscar cliente por ID:', error);
+    if (error) {
+      throw error;
+    }
+
+    if (!data) {
       return null;
     }
+
+    return mapCustomerFromSupabase(data as CustomerRow);
   }
 
   /**

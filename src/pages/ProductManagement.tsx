@@ -3,7 +3,7 @@ import Layout from '@/components/Layout';
 import { Package, Plus, Trash2, Tag, Search, Image, Edit, Save, X, Check, Info, Upload, FileText, HelpCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase } from '@/integrations/supabase/client';
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { cn } from "@/lib/utils";
 import { validateAndProcessCsv } from '@/utils/csvImport';
@@ -11,30 +11,30 @@ import CsvHelpDialog from '@/components/CsvHelpDialog';
 import { ProductsService, Product as ProductType } from '@/services/productsService';
 import { checkAuthAndRLS } from '@/lib/supabaseClient';
 import { useSessionRefresh } from '@/hooks/useSessionRefresh';
-import { Database } from '@/types/supabase';
+import type { Database } from '@/types/supabase';
 
-type SupabaseProduct = Database['public']['Tables']['ecommerce_products']['Row'];
+type Tables = Database['public']['Tables'];
+type EcommerceProductRow = Tables['ecommerce_products']['Row'];
 
 interface Product {
   id: string;
   name: string;
   code: string;
-  price: number;
   description: string;
-  imageUrl?: string;
+  price: number;
   image_path?: string;
   ncm: string;
   unit: string;
   quantity: number;
-  total?: number;
-  owner_id: string;
+  total_amount?: number;
   category_id?: string;
+  owner_id: string;
   created_at?: string;
   updated_at?: string;
 }
 
-interface FormData extends Omit<Product, 'id' | 'total' | 'created_at' | 'updated_at'> {
-  imageUrl: string;
+interface FormData extends Omit<Product, 'id' | 'created_at' | 'updated_at'> {
+  image_path: string;
 }
 
 const defaultFormData: FormData = {
@@ -42,13 +42,13 @@ const defaultFormData: FormData = {
   code: '',
   price: 0,
   description: '',
-  imageUrl: '',
+  image_path: undefined,
   ncm: '',
   unit: '',
   quantity: 0,
   owner_id: '',
   category_id: undefined,
-  image_path: undefined
+  total_amount: undefined
 };
 
 const generateUniqueId = (): string => {
@@ -148,20 +148,19 @@ const ProductDialogTitle = EditProductDialogTitle;
 // Definição do estilo padrão para inputs
 const inputStyles = "w-full px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-fiscal-green-500 focus:border-fiscal-green-500 transition-colors shadow-sm";
 
-const mapSupabaseProduct = (data: SupabaseProduct): Product => ({
+const mapSupabaseProduct = (data: EcommerceProductRow): Product => ({
   id: data.id,
   name: data.name,
   code: data.code,
-  price: data.price,
   description: data.description || '',
-  imageUrl: data.image_path || '',
-  image_path: data.image_path || '',
+  price: data.price,
+  image_path: data.image_path || undefined,
   ncm: data.ncm || '',
   unit: data.unit || 'UN',
   quantity: data.quantity || 0,
-  total: 0,
-  owner_id: data.owner_id,
+  total_amount: data.total_amount || undefined,
   category_id: data.category_id || undefined,
+  owner_id: data.owner_id,
   created_at: data.created_at || undefined,
   updated_at: data.updated_at || undefined
 });
@@ -281,11 +280,11 @@ const ProductManagement: React.FC = () => {
               code: p.code,
               price: p.price,
               description: p.description || '',
-              imageUrl: p.image_path || p.imageUrl || '',
+              image_path: p.image_path || p.imageUrl || '',
               ncm: p.ncm || '',
               unit: p.unit || 'UN',
               quantity: typeof p.quantity === 'number' ? p.quantity : 0,
-              total: p.total || 0
+              total_amount: p.total || 0
           }));
           
           setProducts(processedProducts);
@@ -419,11 +418,11 @@ const ProductManagement: React.FC = () => {
           code: addedProduct.code,
           price: addedProduct.price,
           description: addedProduct.description || '',
-          imageUrl: addedProduct.image_path || '',
+          image_path: addedProduct.image_path || '',
           ncm: addedProduct.ncm || '',
           unit: addedProduct.unit || 'UN',
           quantity: addedProduct.quantity || 0,
-          total: 0
+          total_amount: 0
         },
         ...prevProducts
       ]);
@@ -536,11 +535,11 @@ const ProductManagement: React.FC = () => {
       code: product.code,
       price: product.price,
       description: product.description || '',
-      imageUrl: product.imageUrl || '',
+      image_path: product.image_path || '',
       ncm: product.ncm || '',
       unit: product.unit || '',
       quantity: product.quantity || 0,
-      total: product.total || 0
+      total_amount: product.total_amount || 0
     });
     setIsEditModalOpen(true);
   };
@@ -552,7 +551,7 @@ const ProductManagement: React.FC = () => {
     try {
       const updatedProduct = {
         ...editingProduct,
-        total: editingProduct.price * (editingProduct.quantity || 0)
+        total_amount: editingProduct.price * (editingProduct.quantity || 0)
       };
 
       const { data, error } = await supabase
@@ -562,11 +561,11 @@ const ProductManagement: React.FC = () => {
           code: updatedProduct.code,
           price: updatedProduct.price,
           description: updatedProduct.description,
-          image_path: updatedProduct.imageUrl,
+          image_path: updatedProduct.image_path,
           ncm: updatedProduct.ncm,
           unit: updatedProduct.unit,
           quantity: updatedProduct.quantity,
-          total: updatedProduct.total
+          total_amount: updatedProduct.total_amount
         })
         .eq('id', updatedProduct.id)
         .select()
@@ -574,7 +573,7 @@ const ProductManagement: React.FC = () => {
 
       if (error) throw error;
 
-      setProducts(products.map(p => p.id === updatedProduct.id ? mapSupabaseProduct(data) : p));
+      setProducts(products.map(p => p.id === updatedProduct.id ? mapSupabaseProduct(data as EcommerceProductRow) : p));
       setEditingProduct(null);
       setIsEditModalOpen(false);
       toast({
@@ -679,7 +678,7 @@ const ProductManagement: React.FC = () => {
             ncm: ncm,
             unit: unit,
             quantity: p.quantity,
-            total: p.total,
+            total_amount: p.total,
             owner_id: user?.id 
         };
       });
@@ -929,7 +928,7 @@ const ProductManagement: React.FC = () => {
         code: product.code,
         price: product.price,
         description: product.description,
-        image_path: product.imageUrl,
+        image_path: product.image_path,
         ncm: product.ncm,
         unit: product.unit,
         quantity: product.quantity,
@@ -969,7 +968,7 @@ const ProductManagement: React.FC = () => {
           code: formData.code,
           price: formData.price,
           description: formData.description,
-          image_path: formData.imageUrl,
+          image_path: formData.image_path,
           ncm: formData.ncm,
           unit: formData.unit,
           quantity: formData.quantity,
@@ -980,7 +979,7 @@ const ProductManagement: React.FC = () => {
 
       if (error) throw error;
 
-      setProducts(prev => [...prev, mapSupabaseProduct(data)]);
+      setProducts(prev => [...prev, mapSupabaseProduct(data as EcommerceProductRow)]);
 
       toast({
         title: "Produto criado",
@@ -1010,10 +1009,11 @@ const ProductManagement: React.FC = () => {
           code: editingProduct.code,
           price: editingProduct.price,
           description: editingProduct.description,
-          image_path: editingProduct.imageUrl,
+          image_path: editingProduct.image_path,
           ncm: editingProduct.ncm,
           unit: editingProduct.unit,
-          quantity: editingProduct.quantity
+          quantity: editingProduct.quantity,
+          total_amount: editingProduct.total_amount
         })
         .eq('id', editingProduct.id)
         .select()
@@ -1022,7 +1022,7 @@ const ProductManagement: React.FC = () => {
       if (error) throw error;
 
       setProducts(prev => prev.map(product => 
-        product.id === editingProduct.id ? mapSupabaseProduct(data) : product
+        product.id === editingProduct.id ? mapSupabaseProduct(data as EcommerceProductRow) : product
       ));
 
       toast({
@@ -1345,13 +1345,13 @@ const ProductManagement: React.FC = () => {
                 <input
                   type="url"
                   id="edit-imageUrl"
-                  name="imageUrl"
-                  value={editingProduct?.imageUrl || ''}
+                  name="image_path"
+                  value={editingProduct?.image_path || ''}
                   onChange={(e) => {
                     if (editingProduct) {
                       setEditingProduct({
                         ...editingProduct,
-                        imageUrl: e.target.value
+                        image_path: e.target.value
                       });
                     }
                   }}
@@ -1372,9 +1372,9 @@ const ProductManagement: React.FC = () => {
                   onChange={(e) => setImageFile(e.target.files?.[0] || null)}
                   className="w-full px-4 py-2 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-fiscal-green-500 focus:border-fiscal-green-500 transition-colors"
                 />
-                {editingProduct?.imageUrl && (
+                {editingProduct?.image_path && (
                   <div className="mt-2">
-                    <img src={editingProduct.imageUrl} alt="Imagem atual" className="h-20 w-20 object-cover rounded-xl border border-gray-200" />
+                    <img src={editingProduct.image_path} alt="Imagem atual" className="h-20 w-20 object-cover rounded-xl border border-gray-200" />
                     <p className="text-xs text-gray-500">Imagem atual</p>
                   </div>
                 )}
@@ -1563,9 +1563,9 @@ const ProductManagement: React.FC = () => {
                   <input
                     type="url"
                     id="imageUrl"
-                    name="imageUrl"
-                    value={formData.imageUrl}
-                    onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
+                    name="image_path"
+                    value={formData.image_path}
+                    onChange={(e) => setFormData({ ...formData, image_path: e.target.value })}
                   className={inputStyles}
                   placeholder="https://exemplo.com/imagem.jpg (opcional)"
                   />
@@ -1723,9 +1723,9 @@ const ProductManagement: React.FC = () => {
                   
                   <div className="flex items-start ml-6">
                     <div className="flex-shrink-0 bg-gray-100 w-14 h-14 rounded-md flex items-center justify-center mr-3">
-                      {product.imageUrl ? (
+                      {product.image_path ? (
                           <img 
-                            src={product.imageUrl} 
+                            src={product.image_path} 
                             alt={product.name} 
                           className="w-full h-full object-cover rounded-md"
                             onError={(e) => {
