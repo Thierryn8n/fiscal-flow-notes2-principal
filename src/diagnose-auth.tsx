@@ -4,10 +4,26 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { Session } from '@supabase/supabase-js';
+
+interface SessionInfo {
+  session: Session | null;
+}
+
+interface TokenInfo {
+  currentSession?: {
+    access_token: string;
+    refresh_token: string;
+    expires_at?: number;
+    expires_in?: number;
+  };
+  error?: string;
+  raw?: string;
+}
 
 const DiagnoseAuth = () => {
-  const [sessionInfo, setSessionInfo] = useState<any>(null);
-  const [localStorageInfo, setLocalStorageInfo] = useState<any>(null);
+  const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null);
+  const [localStorageInfo, setLocalStorageInfo] = useState<TokenInfo | null>(null);
   const [isChecking, setIsChecking] = useState(false);
   const { user, refreshSession, forceRefreshAuthContext } = useAuth();
   const navigate = useNavigate();
@@ -24,18 +40,22 @@ const DiagnoseAuth = () => {
       
       // Verificar localStorage
       const tokenData = localStorage.getItem('supabase.auth.token');
-      let parsedToken = null;
+      let parsedToken: TokenInfo | null = null;
       
       try {
         parsedToken = tokenData ? JSON.parse(tokenData) : null;
       } catch (error) {
-        parsedToken = { error: 'Token corrompido', raw: tokenData };
+        parsedToken = { 
+          error: 'Token corrompido', 
+          raw: tokenData || undefined 
+        };
       }
       
       setSessionInfo(data);
       setLocalStorageInfo(parsedToken);
     } catch (error) {
-      console.error('Erro ao diagnosticar autenticação:', error);
+      console.error('Erro ao diagnosticar autenticação:', 
+        error instanceof Error ? error.message : 'Erro desconhecido');
     } finally {
       setIsChecking(false);
     }
@@ -106,7 +126,7 @@ const DiagnoseAuth = () => {
                       : 'Nenhuma sessão encontrada'
                   }
                 </pre>
-                {sessionInfo?.session && (
+                {sessionInfo?.session && typeof sessionInfo.session.expires_at === 'number' && (
                   <p className="mt-2 text-sm">
                     <strong>Status da Expiração:</strong> {formatExpiry(sessionInfo.session.expires_at)}
                   </p>

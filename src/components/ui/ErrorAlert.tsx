@@ -4,7 +4,8 @@ import { Button } from './button';
 import { Card } from './card';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase } from '@/integrations/supabase/client';
+import { AuthError } from '@supabase/supabase-js';
 
 interface ErrorAlertProps {
   title: string;
@@ -34,19 +35,23 @@ export function ErrorAlert({
 
   const handleLogout = async () => {
     try {
-      await supabase.auth.signOut();
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        throw error;
+      }
+      
       toast({
         title: 'Sessão encerrada',
         description: 'Você foi desconectado com sucesso.',
-        variant: 'info',
+        variant: 'default',
       });
       navigate('/login');
     } catch (error) {
       console.error('Erro ao fazer logout:', error);
       toast({
         title: 'Erro ao sair',
-        description: 'Não foi possível encerrar a sessão corretamente.',
-        variant: 'error',
+        description: error instanceof AuthError ? error.message : 'Não foi possível encerrar a sessão corretamente.',
+        variant: 'destructive',
       });
     }
   };

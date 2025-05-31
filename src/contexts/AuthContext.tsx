@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { User, Session } from '@supabase/supabase-js';
+import { User, Session, AuthError, AuthResponse } from '@supabase/supabase-js';
 import { JwtExpiredAlert, AuthErrorAlert } from '@/components/ui/ErrorAlert';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -14,8 +14,8 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: any }>;
-  signUp: (email: string, password: string) => Promise<{ error: any; data: any }>;
+  signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
+  signUp: (email: string, password: string) => Promise<{ error: AuthError | null; data: AuthResponse['data'] | null }>;
   signOut: () => Promise<void>;
   refreshSession: () => Promise<boolean>;
   forceRefreshAuthContext: () => Promise<boolean>;
@@ -69,14 +69,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       toast({
         title: "Autenticação atualizada",
         description: "Contexto de autenticação atualizado com sucesso.",
-        variant: "success"
+        variant: "default"
       });
     } else {
-    toast({
+      toast({
         title: "Falha na autenticação",
         description: "Não foi possível obter suas informações de autenticação.",
-        variant: "error"
-    });
+        variant: "destructive"
+      });
     }
     
     return success;
@@ -94,7 +94,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         toast({
           title: "Sessão expirada",
           description: "Por favor, faça login novamente.",
-          variant: "error"
+          variant: "destructive"
         });
         return false;
       }
@@ -160,7 +160,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   // Função de login com recuperação automática em caso de falha
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (email: string, password: string): Promise<{ error: AuthError | null }> => {
     try {
       console.log("AuthContext: Tentando login para:", email);
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -183,11 +183,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
     } catch (error) {
       console.error("AuthContext: Exceção durante login:", error);
-      return { error };
+      return { error: error as AuthError };
     }
   };
 
-  const signUp = async (email: string, password: string) => {
+  const signUp = async (email: string, password: string): Promise<{ error: AuthError | null; data: AuthResponse['data'] | null }> => {
     try {
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -196,7 +196,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       return { data, error };
     } catch (error) {
-      return { data: null, error };
+      return { data: null, error: error as AuthError };
     }
   };
 
