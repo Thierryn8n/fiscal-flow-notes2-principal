@@ -1,0 +1,5 @@
+
+project_id = "bbqtnkqjvhzhxdmjmqtt"
+
+[functions.cleanup-print-requests]
+verify_jwt = true
