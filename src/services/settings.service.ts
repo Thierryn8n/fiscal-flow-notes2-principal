@@ -36,8 +36,8 @@ export const SettingsService = {
         delivery_settings: data.delivery_settings as unknown as DeliverySettings,
         printer_settings: data.printer_settings as unknown as PrinterSettings,
         ecommerce_settings: data.ecommerce_settings as unknown as EcommerceSettings,
-        created_at: data.created_at,
-        updated_at: data.updated_at
+        created_at: data.created_at || undefined,
+        updated_at: data.updated_at || undefined
       };
     } catch (error) {
       console.error('Error fetching user settings:', error);
@@ -84,8 +84,8 @@ export const SettingsService = {
         delivery_settings: data.delivery_settings as unknown as DeliverySettings,
         printer_settings: data.printer_settings as unknown as PrinterSettings,
         ecommerce_settings: data.ecommerce_settings as unknown as EcommerceSettings,
-        created_at: data.created_at,
-        updated_at: data.updated_at
+        created_at: data.created_at || undefined,
+        updated_at: data.updated_at || undefined
       };
     } catch (error) {
       console.error('Error creating user settings:', error);
@@ -133,8 +133,8 @@ export const SettingsService = {
         delivery_settings: data.delivery_settings as unknown as DeliverySettings,
         printer_settings: data.printer_settings as unknown as PrinterSettings,
         ecommerce_settings: data.ecommerce_settings as unknown as EcommerceSettings,
-        created_at: data.created_at,
-        updated_at: data.updated_at
+        created_at: data.created_at || undefined,
+        updated_at: data.updated_at || undefined
       };
     } catch (error) {
       console.error('Error updating user settings:', error);

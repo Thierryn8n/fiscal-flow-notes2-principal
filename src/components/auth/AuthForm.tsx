@@ -15,14 +15,24 @@ import {
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { AuthError } from '@supabase/supabase-js';
 
 type AuthMode = 'login' | 'register';
 
 const authSchema = z.object({
-  email: z.string().email('Digite um email válido'),
-  password: z.string().min(6, 'A senha deve ter pelo menos 6 caracteres'),
-  fullName: z.string().optional(),
+  email: z.string()
+    .min(1, 'O email é obrigatório')
+    .email('Digite um email válido'),
+  password: z.string()
+    .min(6, 'A senha deve ter pelo menos 6 caracteres')
+    .max(72, 'A senha não pode ter mais de 72 caracteres'),
+  fullName: z.string()
+    .min(1, 'O nome completo é obrigatório')
+    .max(255, 'O nome não pode ter mais de 255 caracteres')
+    .optional(),
 });
+
+type AuthFormValues = z.infer<typeof authSchema>;
 
 const AuthForm: React.FC = () => {
   const [mode, setMode] = useState<AuthMode>('login');
@@ -30,7 +40,7 @@ const AuthForm: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   
-  const form = useForm<z.infer<typeof authSchema>>({
+  const form = useForm<AuthFormValues>({
     resolver: zodResolver(authSchema),
     defaultValues: {
       email: '',
@@ -40,25 +50,36 @@ const AuthForm: React.FC = () => {
   });
 
   const toggleMode = () => {
+    form.reset();
     setMode(mode === 'login' ? 'register' : 'login');
   };
 
-  const onSubmit = async (values: z.infer<typeof authSchema>) => {
+  const onSubmit = async (values: AuthFormValues) => {
     setIsLoading(true);
     
     try {
       if (mode === 'register') {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email: values.email,
           password: values.password,
           options: {
             data: {
-              full_name: values.fullName,
+              full_name: values.fullName || '',
             },
           },
         });
 
         if (error) throw error;
+
+        if (data.user?.identities?.length === 0) {
+          toast({
+            title: 'Email já cadastrado',
+            description: 'Este email já está sendo usado. Por favor, faça login.',
+            variant: 'destructive',
+          });
+          setMode('login');
+          return;
+        }
 
         toast({
           title: 'Cadastro realizado com sucesso!',
@@ -74,20 +95,37 @@ const AuthForm: React.FC = () => {
 
         if (error) throw error;
 
-        // Configurar o ID do usuário no localStorage
-        if (data && data.user) {
+        if (data.user) {
           localStorage.setItem('default_user_id', data.user.id);
+          
+          toast({
+            title: 'Login efetuado com sucesso!',
+            description: 'Bem-vindo ao Fiscal Flow Notes.',
+          });
+          
+          navigate('/dashboard');
         }
-
-        toast({
-          title: 'Login efetuado com sucesso!',
-          description: 'Bem-vindo ao Fiscal Flow Notes.',
-        });
-        
-        navigate('/dashboard');
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Ocorreu um erro ao processar sua solicitação';
+      console.error('Erro na autenticação:', error);
+      
+      let errorMessage = 'Ocorreu um erro ao processar sua solicitação';
+      
+      if (error instanceof AuthError) {
+        switch (error.message) {
+          case 'Invalid login credentials':
+            errorMessage = 'Email ou senha incorretos';
+            break;
+          case 'Email not confirmed':
+            errorMessage = 'Por favor, confirme seu email antes de fazer login';
+            break;
+          case 'Password should be at least 6 characters':
+            errorMessage = 'A senha deve ter pelo menos 6 caracteres';
+            break;
+          default:
+            errorMessage = error.message;
+        }
+      }
       
       toast({
         title: mode === 'login' ? 'Erro no login' : 'Erro no cadastro',

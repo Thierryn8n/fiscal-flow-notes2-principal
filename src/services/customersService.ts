@@ -1,10 +1,48 @@
 import { supabase } from '@/integrations/supabase/client';
-import { Customer, CustomerFilters, PaginatedResponse } from '@/types/Customer';
+import { Json } from '@/types/supabase';
 
 /* 
  * Serviço de Clientes - Parte do sistema Fiscal Flow
  * Visual de grade (grid lines) aplicado nas páginas para melhor organização visual
  */
+export interface CustomerAddress {
+  street: string;
+  number: string;
+  complement?: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+  zipcode: string;
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  phone: string;
+  email?: string;
+  address?: CustomerAddress;
+  signature?: string;
+  owner_id: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface CustomerFilters {
+  page?: number;
+  pageSize?: number;
+  searchTerm?: string;
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  count: number;
+  pageInfo?: {
+    page: number;
+    pageSize: number;
+    totalPages: number;
+  };
+}
+
 export class CustomersService {
   // Tabela no Supabase
   private static readonly TABLE_NAME = 'customers';
@@ -26,14 +64,14 @@ export class CustomersService {
         console.warn("Erro ao tentar renovar sessão:", refreshError);
       }
 
-      // Certifique-se de que temos um ownerId
-      if (!customer.ownerId) {
+      // Certifique-se de que temos um owner_id
+      if (!customer.owner_id) {
         const { data: sessionData } = await supabase.auth.getSession();
         if (!sessionData.session?.user?.id) {
           console.error("Erro de autenticação: Usuário não está autenticado ou sessão expirada");
           throw new Error('Usuário não autenticado ou sessão expirada');
         }
-        customer.ownerId = sessionData.session.user.id;
+        customer.owner_id = sessionData.session.user.id;
       }
       
       // Verificar se o cliente já existe (tem ID)
@@ -43,7 +81,7 @@ export class CustomersService {
           name: customer.name,
           phone: customer.phone,
           email: customer.email,
-          address: customer.address,
+          address: customer.address as any,
           signature: customer.signature
         };
 
@@ -70,9 +108,9 @@ export class CustomersService {
           name: customer.name,
           phone: customer.phone,
           email: customer.email,
-          address: customer.address,
+          address: customer.address as unknown as Json,
           signature: customer.signature,
-          owner_id: customer.ownerId
+          owner_id: customer.owner_id
         };
 
         // Inserir novo cliente
@@ -272,7 +310,7 @@ export class CustomersService {
             phone: customerData.phone,
             address: customerData.address || {},
             signature: customerData.signature,
-            ownerId: customerData.ownerId
+            owner_id: customerData.ownerId
           });
         }
         // Se for outro erro, propagar
@@ -291,18 +329,39 @@ export class CustomersService {
    * Mapeia os dados do Supabase para o formato do aplicativo
    */
   private static mapCustomerFromSupabase(data: any): Customer {
-    if (!data) return null as any;
-    
     return {
       id: data.id,
       name: data.name,
       phone: data.phone,
-      email: data.email,
+      email: data.email || undefined,
       address: data.address,
-      signature: data.signature,
-      ownerId: data.owner_id,
-      createdAt: data.created_at,
-      updatedAt: data.updated_at
+      signature: data.signature || undefined,
+      owner_id: data.owner_id,
+      created_at: data.created_at,
+      updated_at: data.updated_at
     };
+  }
+
+  async update(id: string, customer: Customer): Promise<Customer | null> {
+    try {
+      const { data, error } = await supabase
+        .from('customers')
+        .update({
+          name: customer.name,
+          phone: customer.phone,
+          email: customer.email,
+          address: customer.address as any,
+          signature: customer.signature
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error('Error updating customer:', error);
+      return null;
+    }
   }
 } 

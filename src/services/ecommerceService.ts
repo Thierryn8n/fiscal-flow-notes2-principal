@@ -2,6 +2,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { v4 as uuidv4 } from 'uuid';
 import { supabasePublic, getPublicProducts, getPublicCategories, getPublicStoreSettings } from '@/integrations/supabase/publicClient';
 import type { Database } from '@/integrations/supabase/types';
+import { Database as SupabaseDatabase } from '@/types/supabase';
 
 /**
  * IMPORTANTE: Páginas públicas como Ecommerce, Carrinho e Checkout NÃO requerem autenticação.
@@ -25,23 +26,27 @@ export interface EcommerceProduct {
   id: string;
   name: string;
   code: string;
-  price: number;
   description?: string;
+  price: number;
   imageUrl?: string;
+  image_path?: string;
   ncm?: string;
   unit?: string;
-  quantity?: number;
-  stock?: number;
-  inStock?: boolean; // Facilita verificações de UI
-  category?: string;
+  quantity: number;
+  total_amount?: number;
   category_id?: string;
-  slug?: string;
+  owner_id: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
-export interface Category extends Omit<Database['public']['Tables']['ecommerce_categories']['Row'], 'created_at' | 'updated_at' | 'owner_id' | 'image_url'> {
+export interface Category {
+  id: string;
+  name: string;
+  description?: string;
+  icon?: string;
   createdAt?: string;
   updatedAt?: string;
-  icon?: string;
 }
 
 export interface CartItem {
@@ -102,12 +107,12 @@ export interface StoreInfo {
 export interface ProductReview {
   id: string;
   product_id: string;
-  user_id?: string | null;
+  user_id: string;
   author_name: string;
   rating: number;
   comment: string;
   created_at: string;
-  updated_at: string;
+  updated_at?: string;
 }
 
 // Interface para Vendedores
@@ -158,21 +163,22 @@ export interface NewCustomerData {
 }
 
 // Interfaces para o sistema Kanban
-export type OrderStatus = 'entrada' | 'preparando' | 'saiu_para_entrega' | 'cancelado' | 'pendente';
+export type OrderStatus = 'pending' | 'processing' | 'completed' | 'cancelled';
 
 export interface OrderKanban {
   id: string;
-  product_id: string;
-  product_name: string;
   customer_id: string;
   customer_name: string;
+  product_id: string;
+  product_name: string;
   seller_id: string;
   seller_name: string;
   status: OrderStatus;
   notes?: string;
-  created_at: string;
-  updated_at: string;
+  owner_id: string;
   total_amount?: number;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface NewOrderKanbanData {
@@ -190,15 +196,21 @@ export interface NewOrderKanbanData {
 // Nova interface para os dados da Visão Geral do Dashboard
 export interface DashboardOverviewData {
   totalRevenue: number;
-  revenueToday: number;
-  revenueYesterday: number;
-  pendingOrdersCount: number;
-  newEntriesCount: number;
-  totalActiveProducts: number;
-  newCustomersToday: number;
-  recentOrders: Pick<OrderKanban, 'id' | 'customer_name' | 'created_at' | 'status' | 'product_name' | 'total_amount'>[];
-  salesLast7Days: { name: string; sales: number }[];
-  topProducts: { name: string; sales: number; revenue: number }[];
+  totalOrders: number;
+  averageOrderValue: number;
+  topProducts: {
+    name: string;
+    revenue: number;
+    quantity: number;
+  }[];
+  recentOrders: {
+    id: string;
+    customer_name: string;
+    created_at?: string;
+    status: OrderStatus;
+    product_name: string;
+    total_amount?: number;
+  }[];
 }
 
 type PublicProductsReturnType = Awaited<ReturnType<typeof getPublicProducts>>;
@@ -208,8 +220,64 @@ type PublicStoreSettingsReturnType = Awaited<ReturnType<typeof getPublicStoreSet
 type EcommerceCategoriesTableRow = Database['public']['Tables']['ecommerce_categories']['Row'];
 type EcommerceSettingsTableRow = Database['public']['Tables']['ecommerce_settings']['Row'];
 
+const mapSupabaseProduct = (data: any): EcommerceProduct => ({
+  id: data.id,
+  name: data.name,
+  code: data.code,
+  description: data.description || '',
+  price: data.price,
+  imageUrl: data.image_path || '',
+  image_path: data.image_path,
+  ncm: data.ncm || '',
+  unit: data.unit || '',
+  quantity: data.quantity || 0,
+  total_amount: data.total_amount,
+  category_id: data.category_id,
+  owner_id: data.owner_id,
+  created_at: data.created_at,
+  updated_at: data.updated_at
+});
+
+const mapSupabaseCategory = (data: any): Category => ({
+  id: data.id,
+  name: data.name,
+  description: data.description || undefined,
+  icon: data.icon || undefined,
+  createdAt: data.created_at || undefined,
+  updatedAt: data.updated_at || undefined
+});
+
+const mapSupabaseReview = (data: any): ProductReview => ({
+  id: data.id,
+  product_id: data.product_id,
+  user_id: data.user_id,
+  author_name: data.author_name,
+  rating: data.rating,
+  comment: data.comment,
+  created_at: data.created_at,
+  updated_at: data.updated_at || undefined
+});
+
+const mapSupabaseOrder = (data: any): OrderKanban => ({
+  id: data.id,
+  customer_id: data.customer_id,
+  customer_name: data.customer_name,
+  product_id: data.product_id,
+  product_name: data.product_name,
+  seller_id: data.seller_id,
+  seller_name: data.seller_name,
+  status: data.status as OrderStatus,
+  notes: data.notes || undefined,
+  owner_id: data.owner_id,
+  total_amount: data.total_amount,
+  created_at: data.created_at || undefined,
+  updated_at: data.updated_at || undefined
+});
+
 export class EcommerceService {
-  private static readonly PRODUCTS_TABLE = 'products';
+  private static readonly PRODUCTS_TABLE = 'ecommerce_products';
+  private static readonly CATEGORIES_TABLE = 'ecommerce_categories';
+  private static readonly SETTINGS_TABLE = 'ecommerce_settings';
   private static readonly REVIEWS_TABLE = 'product_reviews';
   private static readonly CART_STORAGE_KEY = 'fiscal_flow_cart';
   private static readonly STORE_INFO_STORAGE_KEY = 'fiscal_flow_store_info';
@@ -221,32 +289,50 @@ export class EcommerceService {
   private static readonly ORDERS_KANBAN_TABLE = 'orders_kanban';
   
   // Produtos
-  static async getProducts(
-    page: number = 1, 
-    limit: number = 20, 
-    searchTerm?: string,
-    category_id?: string,
-    owner_id?: string
-  ): Promise<{ data: EcommerceProduct[], count: number }> {
-    return getPublicProducts(page, limit, searchTerm, category_id);
+  static async getProducts(page: number = 1, limit: number = 10, searchTerm?: string, category_id?: string): Promise<{ data: EcommerceProduct[]; count: number }> {
+    try {
+      const start = (page - 1) * limit;
+      const end = start + limit - 1;
+
+      let query = supabase
+        .from(this.PRODUCTS_TABLE)
+        .select('*', { count: 'exact' })
+        .range(start, end);
+
+      if (searchTerm) {
+        query = query.or(`name.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%`);
+      }
+
+      if (category_id) {
+        query = query.eq('category_id', category_id);
+      }
+
+      const { data, error, count } = await query;
+
+      if (error) throw error;
+
+      return {
+        data: (data || []).map(mapSupabaseProduct),
+        count: count || 0
+      };
+    } catch (error) {
+      console.error('Error fetching products:', error);
+      return { data: [], count: 0 };
+    }
   }
   
   static async getProductById(id: string): Promise<EcommerceProduct | null> {
     try {
-      const { data, error } = await supabasePublic
-        .from('products')
+      const { data, error } = await supabase
+        .from(this.PRODUCTS_TABLE)
         .select('*')
         .eq('id', id)
         .single();
-      
-      if (error) {
-        console.error('Erro ao buscar produto:', error);
-        return null;
-      }
-      
-      return data;
+
+      if (error) throw error;
+      return data ? mapSupabaseProduct(data) : null;
     } catch (error) {
-      console.error('Erro ao buscar produto:', error);
+      console.error('Error fetching product:', error);
       return null;
     }
   }
@@ -257,13 +343,24 @@ export class EcommerceService {
 
   // Obter categorias com cache
   static async getCategories(): Promise<Category[]> {
-    return getPublicCategories();
+    try {
+      const { data, error } = await supabase
+        .from(this.CATEGORIES_TABLE)
+        .select('*');
+
+      if (error) throw error;
+
+      return (data || []).map(mapSupabaseCategory);
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+      return [];
+    }
   }
   
   static async createCategory(category: { name: string; description?: string; icon?: string }): Promise<Category | null> {
     try {
       const { data, error } = await supabase
-        .from('ecommerce_categories')
+        .from(this.CATEGORIES_TABLE)
         .insert([
           {
         name: category.name,
@@ -290,7 +387,7 @@ export class EcommerceService {
   static async updateCategory(id: string, categoryUpdate: Partial<Omit<Category, 'id' | 'createdAt' | 'updatedAt'>>): Promise<Category | null> {
     try {
       const { data, error } = await supabase
-        .from('ecommerce_categories')
+        .from(this.CATEGORIES_TABLE)
         .update({
           name: categoryUpdate.name,
           description: categoryUpdate.description,
@@ -316,7 +413,7 @@ export class EcommerceService {
   static async deleteCategory(id: string): Promise<boolean> {
     try {
       const { error } = await supabase
-        .from('ecommerce_categories')
+        .from(this.CATEGORIES_TABLE)
         .delete()
         .eq('id', id);
       
@@ -481,47 +578,32 @@ export class EcommerceService {
   // Funções para Product Reviews
   static async getProductReviews(productId: string): Promise<ProductReview[]> {
     try {
-      const { data, error } = await supabasePublic
+      const { data, error } = await supabase
         .from('product_reviews')
         .select('*')
-        .eq('product_id', productId)
-        .order('created_at', { ascending: false });
+        .eq('product_id', productId);
 
-      if (error) {
-        console.error('Erro ao buscar avaliações:', error);
-        return [];
-      }
-
-      return data || [];
+      if (error) throw error;
+      return (data || []).map(mapSupabaseReview);
     } catch (error) {
-      console.error('Erro ao buscar avaliações:', error);
+      console.error('Error fetching product reviews:', error);
       return [];
     }
   }
 
-  static async addProductReview(reviewData: {
-    product_id: string;
-    user_id?: string;
-    author_name: string;
-    rating: number;
-    comment: string;
-  }): Promise<ProductReview> {
+  static async addProductReview(review: Omit<ProductReview, 'id' | 'created_at' | 'updated_at'>): Promise<ProductReview | null> {
     try {
-      const { data, error } = await supabasePublic
+      const { data, error } = await supabase
         .from('product_reviews')
-        .insert([reviewData])
+        .insert(review)
         .select()
         .single();
 
-      if (error) {
-        console.error('Erro ao adicionar avaliação:', error);
-        throw error;
-      }
-
-      return data;
+      if (error) throw error;
+      return data ? mapSupabaseReview(data) : null;
     } catch (error) {
-      console.error('Erro ao adicionar avaliação:', error);
-      throw error;
+      console.error('Error adding product review:', error);
+      return null;
     }
   }
 
@@ -610,39 +692,30 @@ export class EcommerceService {
       const { data, error } = await supabase
         .from('orders_kanban')
         .select('*')
-        .order('created_at', { ascending: false });
+        .eq('owner_id', userId);
 
-      if (error) {
-        console.error('Erro ao buscar pedidos do Kanban:', error);
-        return [];
-      }
-
-      return data || [];
+      if (error) throw error;
+      return (data || []).map(mapSupabaseOrder);
     } catch (error) {
-      console.error('Erro ao buscar pedidos do Kanban:', error);
+      console.error('Error fetching orders kanban:', error);
       return [];
     }
   }
 
-  static async updateOrderKanbanStatus(orderId: string, newStatus: OrderStatus): Promise<boolean> {
+  static async updateOrderStatus(orderId: string, status: OrderStatus): Promise<OrderKanban | null> {
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('orders_kanban')
-        .update({ 
-          status: newStatus,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', orderId);
+        .update({ status })
+        .eq('id', orderId)
+        .select()
+        .single();
 
-      if (error) {
-        console.error('Erro ao atualizar status do pedido:', error);
-        return false;
-      }
-
-      return true;
+      if (error) throw error;
+      return data ? mapSupabaseOrder(data) : null;
     } catch (error) {
-      console.error('Erro ao atualizar status do pedido:', error);
-      return false;
+      console.error('Error updating order status:', error);
+      return null;
     }
   }
 
@@ -669,206 +742,74 @@ export class EcommerceService {
   // =============================================================================================
   // FUNÇÃO PARA BUSCAR DADOS DA VISÃO GERAL DO DASHBOARD
   // =============================================================================================
-  static async getDashboardOverviewData(ownerId: string): Promise<DashboardOverviewData> {
-    console.log("EcommerceService: Buscando dados 100% reais de todas as tabelas para o proprietário:", ownerId);
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
+  static async getDashboardOverview(userId: string): Promise<DashboardOverviewData> {
     try {
-      interface OrderProduct {
-        product_name: string;
-        total_amount: number;
-        status: string;
-      }
+      // Buscar todos os pedidos do usuário
+      const { data: orders, error: ordersError } = await supabase
+        .from('orders_kanban')
+        .select('*')
+        .eq('owner_id', userId);
 
-      const todayISOStart = today.toISOString();
-      
-      const tomorrow = new Date(today);
-      tomorrow.setDate(today.getDate() + 1);
-      const tomorrowISOStart = tomorrow.toISOString();
+      if (ordersError) throw ordersError;
 
-      const yesterday = new Date(today);
-      yesterday.setDate(today.getDate() - 1);
-      const yesterdayISOStart = yesterday.toISOString();
+      const allOrders = orders || [];
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
 
-      // --- 1. Vendas de Hoje e Ontem (Pedidos não cancelados) ---
-      const { data: todayOrdersData, error: todayOrdersError } = await supabase
-        .from(this.ORDERS_KANBAN_TABLE)
-        .select("total_amount")
-        .eq('owner_id', ownerId) // Filtra por loja
-        .gte('created_at', todayISOStart)
-        .lt('created_at', tomorrowISOStart)
-        .neq('status', 'cancelado');
+      // Calcular métricas
+      const totalOrders = allOrders.length;
+      const totalRevenue = allOrders.reduce((sum, o) => sum + (o.total_amount || 0), 0);
+      const averageOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
-      if (todayOrdersError) throw todayOrdersError;
-
-      const { data: yesterdayOrdersData, error: yesterdayOrdersError } = await supabase
-        .from(this.ORDERS_KANBAN_TABLE)
-        .select("total_amount")
-        .eq('owner_id', ownerId) // Filtra por loja
-        .gte('created_at', yesterdayISOStart)
-        .lt('created_at', todayISOStart)
-        .neq('status', 'cancelado');
-
-      if (yesterdayOrdersError) throw yesterdayOrdersError;
-
-      const revenueToday = (todayOrdersData || [])
-        .reduce((sum, o) => sum + (o.total_amount || 0), 0);
-
-      const revenueYesterday = (yesterdayOrdersData || [])
-        .reduce((sum, o) => sum + (o.total_amount || 0), 0);
-
-      // --- 2. Pedidos Pendentes e Novas Entradas ---
-      const { data: pendingOrdersData, error: pendingOrdersError } = await supabase
-        .from(this.ORDERS_KANBAN_TABLE)
-        .select("id, created_at, status")
-        .eq('owner_id', ownerId) // Filtra por loja
-        .in('status', ['entrada', 'pendente']);
-
-      if (pendingOrdersError) throw pendingOrdersError;
-
-      const pendingOrders = pendingOrdersData || [];
-      const pendingOrdersCount = pendingOrders.length;
-      const newEntriesCount = pendingOrders.filter(o => 
-        o.status === 'entrada' && 
-        new Date(o.created_at) >= today
-      ).length;
-
-      // --- 3. Total de Produtos Ativos ---
-      const { count: activeProductsCount, error: productsError } = await supabase
-        .from(this.PRODUCTS_TABLE)
-        .select('id', { count: 'exact', head: true })
-        .eq('owner_id', ownerId) // Filtra por loja
-        .eq('inStock', true)
-        .gt('quantity', 0); // Adiciona verificação de quantidade
-
-      if (productsError) throw productsError;
-      const totalActiveProducts = activeProductsCount || 0;
-
-      // --- 4. Novos Clientes Hoje ---
-      const { count: newCustomersCount, error: customersError } = await supabase
-        .from(this.CUSTOMERS_TABLE)
-        .select('id', { count: 'exact', head: true })
-        .eq('owner_id', ownerId)
-        .gte('created_at', todayISOStart)
-        .lt('created_at', tomorrowISOStart);
-
-      if (customersError) throw customersError;
-      const newCustomersToday = newCustomersCount || 0;
-
-      // --- 5. Pedidos Recentes (Últimos 5) ---
-      const { data: recentOrdersData, error: recentOrdersError } = await supabase
-        .from(this.ORDERS_KANBAN_TABLE)
-        .select('id, customer_name, created_at, status, product_name, total_amount')
-        .eq('owner_id', ownerId)
-        .order('created_at', { ascending: false })
-        .limit(5);
-
-      if (recentOrdersError) throw recentOrdersError;
-
-      // --- 6. Vendas dos Últimos 7 Dias (Dados Reais) ---
-      const sevenDaysAgo = new Date(today);
-      sevenDaysAgo.setDate(today.getDate() - 6);
-      const sevenDaysAgoISOStart = sevenDaysAgo.toISOString();
-
-      const { data: last7DaysOrdersData, error: last7DaysError } = await supabase
-        .from(this.ORDERS_KANBAN_TABLE)
-        .select("created_at, total_amount")
-        .eq('owner_id', ownerId) // Filtra por loja
-        .gte('created_at', sevenDaysAgoISOStart)
-        .lt('created_at', tomorrowISOStart)
-        .neq('status', 'cancelado');
-
-      if (last7DaysError) throw last7DaysError;
-
-      const salesLast7Days = Array(7).fill(null).map((_, i) => {
-        const day = new Date(today);
-        day.setDate(today.getDate() - (6 - i));
-        day.setHours(0, 0, 0, 0);
-        const nextDay = new Date(day);
-        nextDay.setDate(day.getDate() + 1);
-
-        const salesOnDay = (last7DaysOrdersData || [])
-          .filter(o => {
-            const orderDate = new Date(o.created_at);
-            return orderDate >= day && orderDate < nextDay;
-          })
-          .reduce((sum, o) => sum + (o.total_amount || 0), 0);
-
-        return {
-          name: day.toLocaleDateString('pt-BR', { weekday: 'short' }).substring(0,3).replace('.',''),
-          sales: salesOnDay
-        };
-      });
-
-      // --- 7. Top Produtos (Dados Reais - Últimos 30 dias) ---
-      const thirtyDaysAgo = new Date(today);
-      thirtyDaysAgo.setDate(today.getDate() - 30);
-      
-      const { data: topProductsData, error: topProductsError } = await supabase
-        .from(this.ORDERS_KANBAN_TABLE)
-        .select('product_name, total_amount, status')
-        .eq('owner_id', ownerId)
-        .gte('created_at', thirtyDaysAgo.toISOString())
-        .neq('status', 'cancelado');
-
-      if (topProductsError) throw topProductsError;
-
-      const productStats = ((topProductsData || []) as OrderProduct[]).reduce((acc, order) => {
-        const productName = order.product_name;
-        if (!acc[productName]) {
-          acc[productName] = { name: productName, sales: 0, revenue: 0 };
+      // Agrupar produtos por nome e calcular receita total
+      const productStats = allOrders.reduce((acc, order) => {
+        const key = order.product_name;
+        if (!acc[key]) {
+          acc[key] = {
+            name: key,
+            revenue: 0,
+            quantity: 0
+          };
         }
-        acc[productName].sales += 1;
-        acc[productName].revenue += order.total_amount || 0;
+        acc[key].revenue += order.total_amount || 0;
+        acc[key].quantity += 1;
         return acc;
-      }, {} as Record<string, { name: string; sales: number; revenue: number }>);
+      }, {} as Record<string, { name: string; revenue: number; quantity: number }>);
 
+      // Ordenar produtos por receita
       const topProducts = Object.values(productStats)
         .sort((a, b) => b.revenue - a.revenue)
-        .slice(0, 3);
+        .slice(0, 5);
 
-      // --- 8. Receita Total (Últimos 30 dias) ---
-      const totalRevenue = ((topProductsData || []) as OrderProduct[])
-        .reduce((sum, o) => sum + (o.total_amount || 0), 0);
+      // Buscar pedidos recentes
+      const recentOrders = allOrders
+        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+        .slice(0, 5)
+        .map(order => ({
+          id: order.id,
+          customer_name: order.customer_name,
+          created_at: order.created_at,
+          status: order.status,
+          product_name: order.product_name,
+          total_amount: order.total_amount || 0
+        }));
 
       return {
         totalRevenue,
-        revenueToday,
-        revenueYesterday,
-        pendingOrdersCount,
-        newEntriesCount,
-        totalActiveProducts,
-        newCustomersToday,
-        recentOrders: recentOrdersData || [],
-        salesLast7Days,
+        totalOrders,
+        averageOrderValue,
         topProducts,
+        recentOrders
       };
-
     } catch (error) {
-      console.error("Falha crítica ao buscar dados da visão geral do dashboard:", error);
-      // Em caso de falha crítica, retornamos zeros para não quebrar a UI
-      const errorDate = new Date();
-      const emptyDashboardData: DashboardOverviewData = {
+      console.error('Error fetching dashboard overview:', error);
+      return {
         totalRevenue: 0,
-        revenueToday: 0,
-        revenueYesterday: 0,
-        pendingOrdersCount: 0,
-        newEntriesCount: 0,
-        totalActiveProducts: 0,
-        newCustomersToday: 0,
-        recentOrders: [],
-        salesLast7Days: Array(7).fill(null).map((_, i) => ({
-          name: new Date(errorDate.setDate(errorDate.getDate() - (6 - i)))
-            .toLocaleDateString('pt-BR', { weekday: 'short' })
-            .substring(0,3)
-            .replace('.',''),
-          sales: 0
-        })),
-        topProducts: []
+        totalOrders: 0,
+        averageOrderValue: 0,
+        topProducts: [],
+        recentOrders: []
       };
-      return emptyDashboardData;
     }
   }
   // =============================================================================================

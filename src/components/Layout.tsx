@@ -6,6 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { SettingsService } from '@/services/settings.service';
 import { EcommerceSettings } from '@/types/settings';
+import { AuthError } from '@supabase/supabase-js';
 import {
   Sidebar,
   SidebarContent,
@@ -34,7 +35,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   useEffect(() => {
     let isMounted = true;
     const checkAuthAndLoadSettings = async () => {
-      const { data: sessionData } = await supabase.auth.getSession();
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) {
+        console.error("Error getting session:", sessionError.message);
+        if (isMounted) navigate('/');
+        return;
+      }
+      
       if (!sessionData.session) {
         if (isMounted) navigate('/');
         return;
@@ -43,7 +50,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       try {
         const userSettings = await SettingsService.getUserSettings();
         if (isMounted) {
-          if (userSettings && userSettings.ecommerce_settings) {
+          if (userSettings?.ecommerce_settings) {
             setEcommerceSettings(userSettings.ecommerce_settings);
           } else {
             setEcommerceSettings({ enabled: false, admin_panel_enabled: false });
@@ -53,6 +60,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         console.error("Failed to load user settings:", error);
         if (isMounted) {
           setEcommerceSettings({ enabled: false, admin_panel_enabled: false });
+          toast({
+            title: 'Erro ao carregar configurações',
+            description: error instanceof Error ? error.message : 'Não foi possível carregar as configurações do usuário.',
+            variant: 'destructive',
+          });
         }
       }
     };
@@ -76,20 +88,25 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, [navigate]);
+  }, [navigate, toast]);
 
   const handleLogout = async () => {
     try {
-      await supabase.auth.signOut();
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        throw error;
+      }
+      
       toast({
         title: 'Logout realizado com sucesso',
         description: 'Você foi desconectado do sistema.',
       });
       navigate('/');
     } catch (error) {
+      console.error('Erro ao fazer logout:', error);
       toast({
         title: 'Erro ao fazer logout',
-        description: 'Ocorreu um erro ao tentar desconectar.',
+        description: error instanceof AuthError ? error.message : 'Ocorreu um erro ao tentar desconectar.',
         variant: 'destructive',
       });
     }

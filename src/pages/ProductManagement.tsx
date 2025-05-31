@@ -11,20 +11,45 @@ import CsvHelpDialog from '@/components/CsvHelpDialog';
 import { ProductsService, Product as ProductType } from '@/services/productsService';
 import { checkAuthAndRLS } from '@/lib/supabaseClient';
 import { useSessionRefresh } from '@/hooks/useSessionRefresh';
+import { Database } from '@/types/supabase';
 
-// Interface local para uso no componente
+type SupabaseProduct = Database['public']['Tables']['ecommerce_products']['Row'];
+
 interface Product {
   id: string;
   name: string;
   code: string;
   price: number;
-  description?: string;
+  description: string;
   imageUrl?: string;
-  ncm?: string;
-  unit?: string;
-  quantity?: number;
+  image_path?: string;
+  ncm: string;
+  unit: string;
+  quantity: number;
   total?: number;
+  owner_id: string;
+  category_id?: string;
+  created_at?: string;
+  updated_at?: string;
 }
+
+interface FormData extends Omit<Product, 'id' | 'total' | 'created_at' | 'updated_at'> {
+  imageUrl: string;
+}
+
+const defaultFormData: FormData = {
+  name: '',
+  code: '',
+  price: 0,
+  description: '',
+  imageUrl: '',
+  ncm: '',
+  unit: '',
+  quantity: 0,
+  owner_id: '',
+  category_id: undefined,
+  image_path: undefined
+};
 
 const generateUniqueId = (): string => {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
@@ -123,9 +148,27 @@ const ProductDialogTitle = EditProductDialogTitle;
 // Definição do estilo padrão para inputs
 const inputStyles = "w-full px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-fiscal-green-500 focus:border-fiscal-green-500 transition-colors shadow-sm";
 
+const mapSupabaseProduct = (data: SupabaseProduct): Product => ({
+  id: data.id,
+  name: data.name,
+  code: data.code,
+  price: data.price,
+  description: data.description || '',
+  imageUrl: data.image_path || '',
+  image_path: data.image_path || '',
+  ncm: data.ncm || '',
+  unit: data.unit || 'UN',
+  quantity: data.quantity || 0,
+  total: 0,
+  owner_id: data.owner_id,
+  category_id: data.category_id || undefined,
+  created_at: data.created_at || undefined,
+  updated_at: data.updated_at || undefined
+});
+
 const ProductManagement: React.FC = () => {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const { checkActiveSession, refreshSession } = useSessionRefresh();
   const [products, setProducts] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -140,16 +183,7 @@ const ProductManagement: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [productsPerPage] = useState<number>(50);
 
-  const [formData, setFormData] = useState<Omit<Product, 'id'>>({
-    name: '',
-    code: '',
-    price: 0,
-    description: '',
-    imageUrl: '',
-    ncm: '',
-    unit: '',
-    quantity: 0
-  });
+  const [formData, setFormData] = useState<FormData>(defaultFormData);
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -395,16 +429,7 @@ const ProductManagement: React.FC = () => {
       ]);
       
       // Limpar formulário
-      setFormData({
-        name: '',
-        code: '',
-        price: 0,
-        description: '',
-        imageUrl: '',
-        ncm: '',
-        unit: '',
-        quantity: 0
-      });
+      setFormData({ ...defaultFormData, owner_id: userId });
       setImageFile(null);
       setIsAddModalOpen(false);
     } catch (error) {
@@ -504,81 +529,65 @@ const ProductManagement: React.FC = () => {
     }
   };
 
+  const handleEditProduct = (product: Product) => {
+    setEditingProduct({
+      id: product.id,
+      name: product.name,
+      code: product.code,
+      price: product.price,
+      description: product.description || '',
+      imageUrl: product.imageUrl || '',
+      ncm: product.ncm || '',
+      unit: product.unit || '',
+      quantity: product.quantity || 0,
+      total: product.total || 0
+    });
+    setIsEditModalOpen(true);
+  };
+
   const handleSaveEditedProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProduct) return;
-    
-    // Verificar sessão ativa
-    const { data: sessionData } = await supabase.auth.getSession();
-    if (!sessionData.session) {
-      toast({
-        title: 'Sessão expirada',
-        description: 'Sua sessão expirou. Por favor, faça login novamente.',
-        variant: 'error'
-      });
-      setTimeout(() => {
-        window.location.href = '/login';
-      }, 2000);
-      return;
-    }
-    
-    // Usar ID do usuário da sessão atual
-    const userId = sessionData.session.user.id;
-    
+
     try {
-      console.log('Atualizando produto...');
-      const productToUpdate: Partial<ProductType> = {
-        name: formData.name,
-        code: formData.code,
-        price: formData.price,
-        description: formData.description || formData.name,
-        ncm: formData.ncm || '',
-        unit: formData.unit || '',
-        quantity: formData.quantity
-        // Não incluir owner_id na atualização
+      const updatedProduct = {
+        ...editingProduct,
+        total: editingProduct.price * (editingProduct.quantity || 0)
       };
-      
-      // Tratar upload de imagem se houver
-      if (imageFile) {
-        const filePath = await ProductsService.uploadProductImage(userId, imageFile);
-        productToUpdate.image_path = filePath;
-      }
-      
-      // Atualizar produto usando o serviço
-      await ProductsService.updateProduct(editingProduct.id, productToUpdate);
-      
-      // Atualizar a lista local
-      setProducts(products.map(product => 
-        product.id === editingProduct.id 
-          ? {
-              ...product,
-              name: formData.name,
-              code: formData.code,
-              price: formData.price,
-              description: formData.description || '',
-              imageUrl: imageFile ? URL.createObjectURL(imageFile) : formData.imageUrl || '',
-              ncm: formData.ncm || '',
-              unit: formData.unit || '',
-              quantity: formData.quantity
-            } 
-          : product
-      ));
-      
-      toast({
-        title: 'Produto atualizado',
-        description: 'Produto atualizado com sucesso.',
-        variant: 'success'
-      });
-      
-      setIsEditModalOpen(false);
+
+      const { data, error } = await supabase
+        .from('ecommerce_products')
+        .update({
+          name: updatedProduct.name,
+          code: updatedProduct.code,
+          price: updatedProduct.price,
+          description: updatedProduct.description,
+          image_path: updatedProduct.imageUrl,
+          ncm: updatedProduct.ncm,
+          unit: updatedProduct.unit,
+          quantity: updatedProduct.quantity,
+          total: updatedProduct.total
+        })
+        .eq('id', updatedProduct.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setProducts(products.map(p => p.id === updatedProduct.id ? mapSupabaseProduct(data) : p));
       setEditingProduct(null);
-      setImageFile(null);
+      setIsEditModalOpen(false);
+      toast({
+        title: 'Sucesso',
+        description: 'Produto atualizado com sucesso!',
+        variant: 'default'
+      });
     } catch (error) {
       console.error('Erro ao atualizar produto:', error);
       toast({
         title: 'Erro',
-        description: 'Não foi possível atualizar o produto.',
-        variant: 'error'
+        description: 'Erro ao atualizar produto. Tente novamente.',
+        variant: 'destructive'
       });
     }
   };
@@ -724,7 +733,7 @@ const ProductManagement: React.FC = () => {
             
             // Inserir lote no Supabase
             const { data, error } = await supabase
-              .from('products')
+              .from('ecommerce_products')
               .insert(batch)
               .select();
               
@@ -776,7 +785,7 @@ const ProductManagement: React.FC = () => {
                 };
                 
         const { data, error } = await supabase
-          .from('products')
+          .from('ecommerce_products')
                   .insert([fixedProduct])
           .select();
                   
@@ -913,6 +922,150 @@ const ProductManagement: React.FC = () => {
     }
   };
 
+  const handleBatchImport = async (products: Product[]) => {
+    try {
+      const batch = products.map(product => ({
+        name: product.name,
+        code: product.code,
+        price: product.price,
+        description: product.description,
+        image_path: product.imageUrl,
+        ncm: product.ncm,
+        unit: product.unit,
+        quantity: product.quantity,
+        owner_id: session?.user?.id
+      }));
+
+      const { data, error } = await supabase
+        .from('ecommerce_products')
+        .insert(batch)
+        .select();
+
+      if (error) throw error;
+
+      setProducts(prev => [...prev, ...(data || []).map(mapSupabaseProduct)]);
+
+      toast({
+        title: "Produtos importados",
+        description: `${products.length} produtos foram importados com sucesso.`,
+        variant: "success"
+      });
+    } catch (error) {
+      console.error('Erro ao importar produtos:', error);
+      toast({
+        title: "Erro na importação",
+        description: "Não foi possível importar os produtos.",
+        variant: "error"
+      });
+    }
+  };
+
+  const handleProductCreation = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('ecommerce_products')
+        .insert({
+          name: formData.name,
+          code: formData.code,
+          price: formData.price,
+          description: formData.description,
+          image_path: formData.imageUrl,
+          ncm: formData.ncm,
+          unit: formData.unit,
+          quantity: formData.quantity,
+          owner_id: session?.user?.id
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setProducts(prev => [...prev, mapSupabaseProduct(data)]);
+
+      toast({
+        title: "Produto criado",
+        description: "O produto foi criado com sucesso.",
+        variant: "success"
+      });
+
+      setFormData({ ...defaultFormData, owner_id: session?.user?.id || '' });
+    } catch (error) {
+      console.error('Erro ao criar produto:', error);
+      toast({
+        title: "Erro na criação",
+        description: "Não foi possível criar o produto.",
+        variant: "error"
+      });
+    }
+  };
+
+  const handleProductUpdate = async () => {
+    if (!editingProduct) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('ecommerce_products')
+        .update({
+          name: editingProduct.name,
+          code: editingProduct.code,
+          price: editingProduct.price,
+          description: editingProduct.description,
+          image_path: editingProduct.imageUrl,
+          ncm: editingProduct.ncm,
+          unit: editingProduct.unit,
+          quantity: editingProduct.quantity
+        })
+        .eq('id', editingProduct.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setProducts(prev => prev.map(product => 
+        product.id === editingProduct.id ? mapSupabaseProduct(data) : product
+      ));
+
+      toast({
+        title: "Produto atualizado",
+        description: "O produto foi atualizado com sucesso.",
+        variant: "success"
+      });
+
+      setEditingProduct(null);
+    } catch (error) {
+      console.error('Erro ao atualizar produto:', error);
+      toast({
+        title: "Erro na atualização",
+        description: "Não foi possível atualizar o produto.",
+        variant: "error"
+      });
+    }
+  };
+
+  const handleCheckAuth = async () => {
+    try {
+      const resultado = await checkAuthAndRLS();
+      let mensagem = '';
+
+      if (resultado.erro) {
+        mensagem += `Erro: ${resultado.erro || 'Falha na autenticação'}\n`;
+      } else {
+        toast({
+          title: "Autenticação OK",
+          description: "Suas credenciais estão válidas.",
+          variant: "success"
+        });
+      }
+    } catch (error) {
+      console.error('Erro ao verificar autenticação:', error);
+      toast({
+        title: "Erro na verificação",
+        description: "Não foi possível verificar suas credenciais.",
+        variant: "error"
+      });
+    }
+  };
+
   return (
     <Layout>
       <div className="space-y-6 animate-fadeIn bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAwIDEwIEwgNDAgMTAgTSAxMCAwIEwgMTAgNDAgTSAwIDIwIEwgNDAgMjAgTSAyMCAwIEwgMjAgNDAgTSAwIDMwIEwgNDAgMzAgTSAzMCAwIEwgMzAgNDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2UyZThmMCIgb3BhY2l0eT0iMC4zIiBzdHJva2Utd2lkdGg9IjEiLz48L3BhdHRlcm4+PC9kZWZzPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InVybCgjZ3JpZCkiLz48L3N2Zz4=')]">
@@ -963,16 +1116,7 @@ const ProductManagement: React.FC = () => {
               
               <button
                 onClick={() => {
-                  setFormData({
-                    name: '',
-                    code: '',
-                    price: 0,
-                    description: '',
-                    imageUrl: '',
-                    ncm: '',
-                    unit: '',
-                    quantity: 0
-                  });
+                  setFormData({ ...defaultFormData, owner_id: session?.user?.id || '' });
                   setIsAddModalOpen(true);
                 }}
                 className="btn-primary rounded-full flex items-center px-5"
@@ -1027,7 +1171,14 @@ const ProductManagement: React.FC = () => {
                     id="edit-name"
                     name="name"
                     value={editingProduct?.name || ''}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })}
+                    onChange={(e) => {
+                      if (editingProduct) {
+                        setEditingProduct({
+                          ...editingProduct,
+                          name: e.target.value
+                        });
+                      }
+                    }}
                     className={inputStyles}
                     placeholder="Nome do produto"
                     required
@@ -1045,9 +1196,13 @@ const ProductManagement: React.FC = () => {
                     name="code"
                     value={editingProduct?.code || ''}
                     onChange={(e) => {
-                      // Limitar para no máximo 9 caracteres
-                      const limitedCode = e.target.value.slice(0, 9);
-                      setEditingProduct({ ...editingProduct, code: limitedCode });
+                      if (editingProduct) {
+                        const limitedCode = e.target.value.slice(0, 9);
+                        setEditingProduct({
+                          ...editingProduct,
+                          code: limitedCode
+                        });
+                      }
                     }}
                     className={inputStyles}
                     placeholder="Código único do produto"
@@ -1070,7 +1225,14 @@ const ProductManagement: React.FC = () => {
                     id="edit-price"
                     name="price"
                     value={editingProduct?.price || 0}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, price: parseFloat(e.target.value) })}
+                    onChange={(e) => {
+                      if (editingProduct) {
+                        setEditingProduct({
+                          ...editingProduct,
+                          price: parseFloat(e.target.value)
+                        });
+                      }
+                    }}
                     className={inputStyles}
                     placeholder="0.00"
                     min="0.01"
@@ -1090,8 +1252,13 @@ const ProductManagement: React.FC = () => {
                     name="ncm"
                     value={editingProduct?.ncm || ''}
                     onChange={(e) => {
-                      const limitedNcm = e.target.value.slice(0, 9);
-                      setEditingProduct({ ...editingProduct, ncm: limitedNcm });
+                      if (editingProduct) {
+                        const limitedNcm = e.target.value.slice(0, 9);
+                        setEditingProduct({
+                          ...editingProduct,
+                          ncm: limitedNcm
+                        });
+                      }
                     }}
                     className={inputStyles}
                     placeholder="Código NCM (opcional)"
@@ -1110,8 +1277,13 @@ const ProductManagement: React.FC = () => {
                     name="unit"
                     value={editingProduct?.unit || ''}
                     onChange={(e) => {
-                      const limitedUnit = e.target.value.slice(0, 9);
-                      setEditingProduct({ ...editingProduct, unit: limitedUnit });
+                      if (editingProduct) {
+                        const limitedUnit = e.target.value.slice(0, 9);
+                        setEditingProduct({
+                          ...editingProduct,
+                          unit: limitedUnit
+                        });
+                      }
                     }}
                     className={inputStyles}
                     placeholder="Unidade de medida (ex: UN, KG, M)"
@@ -1128,7 +1300,14 @@ const ProductManagement: React.FC = () => {
                     id="edit-quantity"
                     name="quantity"
                     value={editingProduct?.quantity || 0}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, quantity: parseFloat(e.target.value) })}
+                    onChange={(e) => {
+                      if (editingProduct) {
+                        setEditingProduct({
+                          ...editingProduct,
+                          quantity: parseFloat(e.target.value) || 0
+                        });
+                      }
+                    }}
                     className={inputStyles}
                     placeholder="Quantidade em estoque"
                     min="0"
@@ -1145,7 +1324,14 @@ const ProductManagement: React.FC = () => {
                   id="edit-description"
                   name="description"
                   value={editingProduct?.description || ''}
-                  onChange={(e) => setEditingProduct({ ...editingProduct, description: e.target.value })}
+                  onChange={(e) => {
+                    if (editingProduct) {
+                      setEditingProduct({
+                        ...editingProduct,
+                        description: e.target.value
+                      });
+                    }
+                  }}
                   className={inputStyles + " min-h-[80px]"}
                   placeholder="Descrição detalhada do produto (opcional)"
                   rows={3}
@@ -1161,7 +1347,14 @@ const ProductManagement: React.FC = () => {
                   id="edit-imageUrl"
                   name="imageUrl"
                   value={editingProduct?.imageUrl || ''}
-                  onChange={(e) => setEditingProduct({ ...editingProduct, imageUrl: e.target.value })}
+                  onChange={(e) => {
+                    if (editingProduct) {
+                      setEditingProduct({
+                        ...editingProduct,
+                        imageUrl: e.target.value
+                      });
+                    }
+                  }}
                   className={inputStyles}
                   placeholder="https://exemplo.com/imagem.jpg (opcional)"
                 />
@@ -1550,8 +1743,7 @@ const ProductManagement: React.FC = () => {
                         <div className="flex space-x-1">
                           <button
                             onClick={() => {
-                              setEditingProduct(product);
-                              setIsEditModalOpen(true);
+                              handleEditProduct(product);
                             }}
                             className="text-blue-500 hover:text-blue-700 focus:outline-none p-1 flex items-center justify-center"
                             title="Editar produto"

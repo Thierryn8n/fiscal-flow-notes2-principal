@@ -7,7 +7,7 @@ import { NotesService } from '@/services/notesService';
 import { FiscalNote } from '@/types/FiscalNote';
 import PrintableNote from '@/components/fiscal/PrintableNote';
 import { useReactToPrint } from 'react-to-print';
-import { ArrowLeft, Printer, Save, Edit } from 'lucide-react';
+import { ArrowLeft, Printer, Edit } from 'lucide-react';
 import { SelectedProduct } from '@/components/fiscal/ProductSelector';
 import { PaymentData } from '@/components/fiscal/PaymentForm';
 import { Button } from '@/components/ui/button';

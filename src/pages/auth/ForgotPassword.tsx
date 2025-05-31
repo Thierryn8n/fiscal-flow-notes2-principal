@@ -8,45 +8,75 @@ import { Label } from '@/components/ui/label';
 import { Mail, Loader2, Check } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Logo from '@/components/ui/Logo';
+import { AuthError } from '@supabase/supabase-js';
+import { z } from 'zod';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+
+const resetSchema = z.object({
+  email: z.string()
+    .min(1, 'O email é obrigatório')
+    .email('Digite um email válido')
+});
+
+type ResetFormValues = z.infer<typeof resetSchema>;
 
 const ForgotPassword = () => {
-  const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const form = useForm<ResetFormValues>({
+    resolver: zodResolver(resetSchema),
+    defaultValues: {
+      email: '',
+    },
+  });
+
+  const onSubmit = async (values: ResetFormValues) => {
     setIsLoading(true);
-    setError(null);
-
     try {
-      // Determinar o URL para onde o usuário será redirecionado após clicar no link
-      const redirectTo = `${window.location.origin}/recover-password`;
-      console.log('Redirecionando para:', redirectTo);
-
-      // Enviar email de recuperação de senha via Supabase
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo
+      const { error } = await supabase.auth.resetPasswordForEmail(values.email, {
+        redirectTo: `${window.location.origin}/reset-password`,
       });
 
       if (error) throw error;
 
-      // Indicar sucesso na interface
       setIsSuccess(true);
       toast({
         title: 'Email enviado',
-        description: 'Enviamos um link de recuperação para seu email.',
+        description: 'Verifique sua caixa de entrada para redefinir sua senha.',
       });
-    } catch (error: any) {
+    } catch (error) {
       console.error('Erro ao enviar email de recuperação:', error);
-      setError(error.message || 'Erro ao enviar email. Tente novamente.');
+      
+      let errorMessage = 'Não foi possível enviar o email de recuperação';
+      
+      if (error instanceof AuthError) {
+        switch (error.message) {
+          case 'User not found':
+            errorMessage = 'Não encontramos uma conta com este email';
+            break;
+          case 'Email rate limit exceeded':
+            errorMessage = 'Muitas tentativas. Tente novamente mais tarde';
+            break;
+          default:
+            errorMessage = error.message;
+        }
+      }
       
       toast({
-        title: 'Erro ao enviar email',
-        description: error.message || 'Não foi possível enviar o email de recuperação.',
+        title: 'Erro',
+        description: errorMessage,
         variant: 'destructive',
       });
     } finally {
@@ -55,98 +85,78 @@ const ForgotPassword = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-r from-green-50 to-emerald-50 p-4">
-      <div className="max-w-md w-full">
-        <div className="text-center mb-8">
-          <div className="flex justify-center mb-2">
-            <Logo />
-          </div>
-          <h1 className="text-3xl font-bold text-gray-800">Fiscal Flow</h1>
-          <p className="text-gray-600 mt-2">Recuperação de senha</p>
-        </div>
-        
-        <Card className="border-gray-200 shadow-xl rounded-xl">
-          <CardHeader>
-            <CardTitle className="text-xl font-semibold text-center">
-              {isSuccess ? 'Email Enviado' : 'Recuperar Senha'}
-            </CardTitle>
-            <CardDescription className="text-center">
-              {isSuccess 
-                ? 'Verifique seu email para recuperar sua senha' 
-                : 'Informe seu email para receber um link de recuperação'}
-            </CardDescription>
-          </CardHeader>
-          
-          <CardContent>
-            {isSuccess ? (
-              <div className="flex flex-col items-center py-6">
-                <div className="h-12 w-12 rounded-full bg-green-100 flex items-center justify-center mb-4">
-                  <Check className="h-6 w-6 text-green-600" />
-                </div>
-                <p className="text-gray-700 text-center max-w-sm mx-auto">
-                  Enviamos um link para <strong>{email}</strong>. 
-                  Verifique sua caixa de entrada e spam.
-                </p>
-              </div>
-            ) : (
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="email" className="text-sm font-medium">Email</Label>
-                  <div className="relative">
-                    <Input
-                      id="email"
-                      type="email"
-                      placeholder="Seu email de acesso"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="rounded-xl pr-10"
-                      required
-                    />
-                    <Mail className="h-4 w-4 absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                  </div>
-                </div>
-                
-                {error && (
-                  <div className="text-red-500 text-sm bg-red-50 p-2 rounded-md border border-red-200">
-                    {error}
-                  </div>
-                )}
-                
-                <Button 
-                  type="submit" 
-                  className="w-full bg-green-600 hover:bg-green-700 text-white rounded-xl py-2 h-11"
-                  disabled={isLoading}
-                >
-                  {isLoading ? (
-                    <div className="flex items-center justify-center">
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Enviando...
-                    </div>
-                  ) : (
-                    "Enviar Link de Recuperação"
-                  )}
-                </Button>
-              </form>
-            )}
-          </CardContent>
-          
-          <CardFooter className="flex justify-center border-t border-gray-100 pt-4">
-            <p className="text-sm text-gray-600">
-              Lembrou sua senha?{" "}
-              <a 
-                onClick={() => navigate("/login")} 
-                className="text-green-600 hover:text-green-700 cursor-pointer"
-              >
-                Faça Login
-              </a>
-            </p>
-          </CardFooter>
-        </Card>
-        
-        <div className="mt-8 text-center text-sm text-gray-500">
-          <p>© {new Date().getFullYear()} Fiscal Flow. Todos os direitos reservados.</p>
-        </div>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4">
+      <div className="mb-8">
+        <Logo />
       </div>
+      
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <CardTitle>Recuperar Senha</CardTitle>
+          <CardDescription>
+            Digite seu email para receber um link de recuperação de senha.
+          </CardDescription>
+        </CardHeader>
+        
+        <CardContent>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input 
+                        type="email" 
+                        placeholder="email@empresa.com" 
+                        {...field}
+                        disabled={isLoading || isSuccess}
+                        autoComplete="email"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={isLoading || isSuccess}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Enviando...
+                  </>
+                ) : isSuccess ? (
+                  <>
+                    <Check className="mr-2 h-4 w-4" />
+                    Email Enviado
+                  </>
+                ) : (
+                  <>
+                    <Mail className="mr-2 h-4 w-4" />
+                    Enviar Link
+                  </>
+                )}
+              </Button>
+            </form>
+          </Form>
+        </CardContent>
+        
+        <CardFooter className="flex justify-center">
+          <Button
+            variant="link"
+            onClick={() => navigate('/login')}
+            className="text-sm text-gray-600 hover:text-gray-900"
+          >
+            Voltar para o Login
+          </Button>
+        </CardFooter>
+      </Card>
     </div>
   );
 };

@@ -3,7 +3,7 @@ import Layout from '@/components/Layout';
 import { SettingsService } from '@/services/settings.service';
 import { UserSettings, CompanyData, InstallmentFee, DeliveryRadius, PrinterSettings, EcommerceSettings } from '@/types/settings';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,6 @@ import { Switch } from "@/components/ui/switch";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { PlusCircle, Trash2, Save, Building, CreditCard, MapPin, Printer, Info } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const defaultSettings: UserSettings = {
   company_data: {
@@ -29,12 +28,12 @@ const defaultSettings: UserSettings = {
   },
   printer_settings: {
     default_printer: '',
-    auto_print: false,
+    auto_print: false
   },
   ecommerce_settings: {
     enabled: false,
-    admin_panel_enabled: false,
-  },
+    admin_panel_enabled: false
+  }
 };
 
 export default function Settings() {
@@ -178,9 +177,19 @@ export default function Settings() {
 
   const updateDeliveryRadius = (index: number, field: keyof DeliveryRadius, value: string | number) => {
     const parsedValue = typeof value === 'string' ? parseFloat(value) : value;
-    const newRadii = [...settings.delivery_settings.delivery_radii];
-    newRadii[index] = { ...newRadii[index], [field]: parsedValue };
-    setSettings(prev => ({ ...prev, delivery_settings: { ...prev.delivery_settings, delivery_radii: newRadii }}));
+    if (isNaN(parsedValue)) return;
+    
+    setSettings(prev => {
+      const newRadii = [...prev.delivery_settings.delivery_radii];
+      newRadii[index] = { ...newRadii[index], [field]: parsedValue };
+      return {
+        ...prev,
+        delivery_settings: {
+          ...prev.delivery_settings,
+          delivery_radii: newRadii
+        }
+      };
+    });
   };
 
   const removeDeliveryRadius = (index: number) => {
@@ -198,23 +207,13 @@ export default function Settings() {
     }));
   };
 
-  const updatePrinterSettings = (field: keyof PrinterSettings, value: any) => {
-    setSettings(prev => ({
-      ...prev,
-      printer_settings: {
-        ...prev.printer_settings,
-        [field]: value
-      }
-    }));
-  };
-
   const updateEcommerceSettings = (field: keyof EcommerceSettings, value: boolean) => {
     setSettings(prev => ({
       ...prev,
       ecommerce_settings: {
-        ...(prev.ecommerce_settings || { enabled: false, admin_panel_enabled: false }),
-        [field]: value,
-      },
+        ...(prev.ecommerce_settings ?? { enabled: false, admin_panel_enabled: false }),
+        [field]: value
+      }
     }));
   };
 
@@ -517,7 +516,7 @@ export default function Settings() {
                     <Label htmlFor="ecommerce-enabled">Ativar E-commerce</Label>
                     <Switch
                       id="ecommerce-enabled"
-                      checked={settings.ecommerce_settings.enabled}
+                      checked={settings.ecommerce_settings?.enabled ?? false}
                       onCheckedChange={(checked) => updateEcommerceSettings('enabled', checked)}
                     />
                   </div>
@@ -525,7 +524,7 @@ export default function Settings() {
                     <Label htmlFor="admin-panel-enabled">Ativar Painel Administrativo</Label>
                     <Switch
                       id="admin-panel-enabled"
-                      checked={settings.ecommerce_settings.admin_panel_enabled}
+                      checked={settings.ecommerce_settings?.admin_panel_enabled ?? false}
                       onCheckedChange={(checked) => updateEcommerceSettings('admin_panel_enabled', checked)}
                     />
                   </div>

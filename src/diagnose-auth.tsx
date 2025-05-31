@@ -81,7 +81,7 @@ const DiagnoseAuth = () => {
     setIsChecking(false);
   };
 
-  const formatExpiry = (expiryTimestamp: number) => {
+  const formatExpiry = (expiryTimestamp?: number | null) => {
     if (!expiryTimestamp) return 'Não disponível';
     
     const expiryDate = new Date(expiryTimestamp * 1000);
@@ -126,7 +126,7 @@ const DiagnoseAuth = () => {
                       : 'Nenhuma sessão encontrada'
                   }
                 </pre>
-                {sessionInfo?.session && typeof sessionInfo.session.expires_at === 'number' && (
+                {sessionInfo?.session?.expires_at && typeof sessionInfo.session.expires_at === 'number' && (
                   <p className="mt-2 text-sm">
                     <strong>Status da Expiração:</strong> {formatExpiry(sessionInfo.session.expires_at)}
                   </p>
