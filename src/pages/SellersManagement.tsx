@@ -5,14 +5,17 @@ import {
   Edit,
   Trash2,
   Save,
+  X,
+  BarChart2,
+  DollarSign,
+  FileText,
   Upload,
   Phone,
   Search,
+  CheckCircle,
   Loader2,
   Mail,
   Info,
-  User,
-  BarChart2,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { JwtExpiredAlert } from '@/components/ui/ErrorAlert';
@@ -24,6 +27,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { supabase } from '@/integrations/supabase/client';
+import { supabaseAdmin } from '@/lib/supabaseClient';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -37,46 +41,21 @@ import {
   DialogTitle,
   DialogTrigger,
   DialogClose,
+  DialogOverlay,
 } from "@/components/ui/dialog";
-import { DialogOverlay } from '@radix-ui/react-dialog';
-import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import type { Database } from '@/types/supabase';
-
-type Tables = Database['public']['Tables'];
-type SellerRow = Tables['sellers']['Row'];
-
-interface Seller extends Omit<SellerRow, 'active' | 'auth_user_id'> {
-  id: string;
-  full_name: string;
-  email?: string | null;
-  phone: string;
-  image_path?: string | null;
-  active?: boolean | null;
-  auth_user_id?: string | null;
-  owner_id: string;
-  created_at?: string | null;
-  updated_at?: string | null;
-}
+import { Seller, SellerStats } from '@/types/seller';
 
 // Interface para cadastrar/editar vendedor
-interface SellerFormData {
+interface SellerInput {
   full_name: string;
-  email?: string;
   phone: string;
+  email?: string;
+  imageUrl?: string;
   image_path?: string;
-  active: boolean;
+  active?: boolean;
 }
 
 // Interface para estatísticas do vendedor
-interface SellerStats {
-  totalNotes: number;
-  paidNotes: number;
-  totalAmount: number;
-  paidAmount: number;
-  recentNotes: NoteItem[];
-}
-
-// Interface para notas geradas
 interface NoteItem {
   id: string;
   date: Date;
@@ -89,64 +68,23 @@ interface NoteItem {
 interface AuthUser {
   id: string;
   email?: string;
-  app_metadata?: Record<string, unknown>;
-  user_metadata?: Record<string, unknown>;
+  app_metadata?: any;
+  user_metadata?: any;
+  // Outros campos podem ser adicionados conforme necessário
 }
 
 const SellersManagement: React.FC = () => {
   // Estado para controlar o diálogo de erro JWT expirado
   const [jwtExpiredError, setJwtExpiredError] = useState<boolean>(false);
   const { toast } = useToast();
-  const { user } = useAuth();
-
-  // Estado para cadastro/edição de vendedor
-  const [newSeller, setNewSeller] = useState<SellerFormData>({
-    full_name: '',
-    phone: '',
-    email: '',
-    image_path: '',
-    active: true,
-  });
-
-  // Estado para lista de vendedores
-  const [sellers, setSellers] = useState<Seller[]>([]);
-
-  // Estado para carregamento
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-
-  // Estado para edição de vendedor
-  const [editingSellerId, setEditingSellerId] = useState<string | null>(null);
-
-  // Estado para pesquisa de vendedores
-  const [searchTerm, setSearchTerm] = useState('');
-
-  // Estado para seleção de vendedor para visualizar estatísticas
-  const [selectedSellerId, setSelectedSellerId] = useState<string | null>(null);
-
-  // Estado para dados de upload de imagem
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string>('');
-
-  // Estado para controle do modal
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-
-  // Estado para controlar o envio de emails por vendedor
-  const [sendingEmails, setSendingEmails] = useState<Record<string, boolean>>({});
-
-  // Estado para indicar carregamento
-  const [isLoading, setIsLoading] = useState(false);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-  const [authError, setAuthError] = useState(false);
-  const [currentTab, setCurrentTab] = useState('vendedores');
-  const [uploadProgress, setUploadProgress] = useState(0);
-
+  
   // Função para lidar com erro de JWT expirado
   const handleJwtExpiredError = useCallback(() => {
     setJwtExpiredError(true);
     toast({
       title: 'Sessão expirada',
       description: 'Sua sessão expirou. Por favor, faça login novamente.',
-      variant: 'destructive',
+      variant: 'error',
     });
   }, [toast]);
   
@@ -166,6 +104,100 @@ const SellersManagement: React.FC = () => {
       window.location.reload();
     }
   };
+  const { user, session, signOut } = useAuth();
+
+  // Estado para cadastro/edição de vendedor
+  const [newSeller, setNewSeller] = useState<SellerInput>({
+    full_name: '',
+    phone: '',
+    email: '',
+    imageUrl: '',
+    image_path: '',
+    active: true,
+  });
+
+  // Estado para lista de vendedores
+  const [sellers, setSellers] = useState<Seller[]>([]);
+
+  // Estado para carregamento
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  // Estado para edição de vendedor
+  const [editingSellerId, setEditingSellerId] = useState<string | null>(null);
+
+  // Estado para pesquisa de vendedores
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Estado para seleção de vendedor para visualizar estatísticas
+  const [selectedSellerId, setSelectedSellerId] = useState<string | null>(null);
+
+  // Estado para dados de upload de imagem
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string>('');
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+
+  // Estado para dados de estatísticas do vendedor selecionado
+  const [sellerStats, setSellerStats] = useState<SellerStats | null>(null);
+
+  // Estado para a aba atual
+  const [currentTab, setCurrentTab] = useState('lista');
+
+  // Estado para controle do modal
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  // Estado para indicar se houve erro na busca de vendedores
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // Estado para controle de erro de autenticação
+  const [authError, setAuthError] = useState(false);
+
+  // Estado para controlar o envio de emails por vendedor
+  const [sendingEmails, setSendingEmails] = useState<Record<string, boolean>>({});
+
+  // Verificação adicional de autenticação ao carregar a página
+  useEffect(() => {
+    console.log("=== COMPONENTE MONTADO - Estado de autenticação inicial ===");
+    console.log("User autenticado:", user ? "Sim" : "Não");
+    console.log("User ID:", user?.id);
+    console.log("User email:", user?.email);
+    
+    // Se o usuário está autenticado, limpar a flag de tentativa de recuperação
+    if (user) {
+      console.log("Usuário autenticado encontrado no contexto, prosseguindo normalmente");
+      sessionStorage.removeItem('session_recovery_attempted');
+      return;
+    }
+    
+    // Verifica se já tentamos recuperar a sessão para evitar loops
+    const sessionRecoveryAttempted = sessionStorage.getItem('session_recovery_attempted');
+    
+    if (!sessionRecoveryAttempted) {
+      console.log("Tentando recuperar sessão do usuário...");
+      
+      // Marca que tentamos recuperar a sessão para evitar loops
+      sessionStorage.setItem('session_recovery_attempted', 'true');
+      
+      // Tenta buscar a sessão atual do usuário diretamente
+      supabase.auth.getSession().then(({ data, error }) => {
+        console.log("Resultado da verificação de sessão:");
+        console.log("- Sessão existe:", data.session ? "Sim" : "Não");
+        console.log("- Erro:", error ? error.message : "Nenhum erro");
+        
+        if (data.session) {
+          console.log('Detalhes da sessão recuperada:');
+          console.log('- User ID:', session.user?.id);
+          console.log('- Email:', session.user?.email);
+          console.log('- Token expira em:', new Date(session.expires_at * 1000).toLocaleString());
+          
+          // Não faz reload, apenas mostra mensagem apropriada
+          setFetchError('Sessão encontrada, mas não foi possível carregar o usuário corretamente. Por favor, faça login novamente.');
+        } else if (error) {
+          console.error('Erro detalhado ao recuperar sessão:', error);
+        }
+      });
+    }
+  }, [user]);
 
   // Função para buscar vendedores do Supabase com useCallback para evitar recriações
   const fetchSellers = useCallback(async () => {
@@ -239,7 +271,19 @@ const SellersManagement: React.FC = () => {
       }
 
       console.log('Vendedores recuperados com sucesso:', data?.length || 0);
-      setSellers(data || []);
+      const typedSellers = data.map(seller => ({
+        id: seller.id,
+        full_name: seller.full_name,
+        email: seller.email || undefined,
+        phone: seller.phone,
+        image_path: seller.image_path || undefined,
+        active: seller.active || false,
+        auth_user_id: seller.auth_user_id || undefined,
+        owner_id: seller.owner_id,
+        created_at: seller.created_at || undefined,
+        updated_at: seller.updated_at || undefined
+      }));
+      setSellers(typedSellers);
     } catch (error: any) {
       console.error('Exceção ao carregar vendedores:', error);
       setFetchError(error.message || 'Não foi possível carregar os vendedores. Verifique sua conexão.');
@@ -257,7 +301,7 @@ const SellersManagement: React.FC = () => {
       toast({
         title: 'Erro ao carregar vendedores',
         description: error.message || 'Ocorreu um erro ao buscar vendedores.',
-        variant: 'destructive',
+        variant: 'error',
       });
     } finally {
       setIsLoading(false);
@@ -273,30 +317,91 @@ const SellersManagement: React.FC = () => {
 
   // Função para tentar renovar o token e buscar vendedores novamente
   const handleRefreshAuth = async () => {
+    console.log("=== TENTANDO RENOVAR AUTENTICAÇÃO ===");
     try {
-      const { data, error } = await supabase.auth.refreshSession();
-      if (error) throw error;
-
-      if (data.session) {
-        console.log('- Token atualizado:', data.session.access_token);
-        if (data.session.expires_at) {
-          console.log('- Token expira em:', new Date(data.session.expires_at * 1000).toLocaleString());
-        }
-        toast({
-          title: "Sucesso!",
-          description: "Sessão renovada com sucesso.",
-          variant: "success"
-        });
+      setIsLoading(true);
+      setAuthError(false);
+      
+      console.log("Estado atual da sessão antes da renovação:");
+      const sessionCheck = await supabase.auth.getSession();
+      console.log("- Sessão existe:", sessionCheck.data.session ? "Sim" : "Não");
+      if (sessionCheck.data.session) {
+        console.log("- Expira em:", new Date(sessionCheck.data.session.expires_at * 1000).toLocaleString());
       }
-    } catch (error) {
-      console.error('Erro ao renovar sessão:', error);
-      toast({
-        title: "Erro",
-        description: "Não foi possível renovar a sessão.",
-        variant: "error"
-      });
+      
+      // Tentar renovar o token de autenticação
+      console.log("Iniciando refresh de sessão...");
+      const { data, error } = await supabase.auth.refreshSession();
+      
+      console.log("Resultado do refresh:", data.session ? "Sucesso" : "Falha");
+      console.log("Erro no refresh:", error ? error.message : "Nenhum erro");
+      
+      if (error) {
+        console.error('Erro detalhado ao renovar sessão:', JSON.stringify(error, null, 2));
+        setAuthError(true);
+        toast({
+          title: 'Erro de autenticação',
+          description: 'Não foi possível renovar sua sessão. Por favor, faça login novamente.',
+          variant: 'error',
+        });
+        return;
+      }
+      
+      if (data.session) {
+        console.log('Detalhes da sessão renovada:');
+        console.log('- User ID:', data.session.user?.id);
+        console.log('- Access Token (últimos 10 caracteres):', 
+          data.session.access_token.substring(data.session.access_token.length - 10));
+        console.log('- Token expira em:', new Date(data.session.expires_at * 1000).toLocaleString());
+        
+        toast({
+          title: 'Sessão renovada',
+          description: 'Sua sessão foi renovada com sucesso.',
+          variant: 'success',
+        });
+        
+        // Se a renovação foi bem-sucedida, buscar vendedores novamente, mas sem loops
+        if (user) {
+          console.log("Usuário disponível no contexto, buscando vendedores...");
+          fetchSellers();
+        } else {
+          // Se ainda não temos usuário no contexto, sugerimos login
+          console.log("ATENÇÃO: Sessão renovada, mas usuário ainda ausente no contexto");
+          setFetchError('Sessão renovada, mas o usuário não está disponível no contexto.');
+          setAuthError(true);
+        }
+      }
+    } catch (error: any) {
+      console.error('Exceção ao tentar reautenticar:', error);
+      setAuthError(true);
+    } finally {
+      setIsLoading(false);
     }
   };
+
+  // Simular carregamento de estatísticas quando um vendedor é selecionado
+  useEffect(() => {
+    if (selectedSellerId) {
+      // Em um app real, isso seria uma chamada API
+      setTimeout(() => {
+        setSellerStats({
+          totalNotes: Math.floor(Math.random() * 100) + 20,
+          paidNotes: Math.floor(Math.random() * 80) + 10,
+          totalAmount: Math.floor(Math.random() * 20000) + 5000,
+          paidAmount: Math.floor(Math.random() * 15000) + 3000,
+          recentNotes: Array(5).fill(0).map((_, index) => ({
+            id: `note-${index}`,
+            date: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000),
+            customer: `Cliente ${Math.floor(Math.random() * 100)}`,
+            amount: Math.floor(Math.random() * 1000) + 100,
+            status: ['paid', 'pending', 'cancelled'][Math.floor(Math.random() * 3)] as 'paid' | 'pending' | 'cancelled',
+          })),
+        });
+      }, 500);
+    } else {
+      setSellerStats(null);
+    }
+  }, [selectedSellerId]);
 
   // Filtrar vendedores baseado no termo de pesquisa
   const filteredSellers = sellers.filter((seller) =>
@@ -307,23 +412,28 @@ const SellersManagement: React.FC = () => {
 
   // Função para adicionar novo vendedor no Supabase
   const handleCreateSeller = async () => {
-    if (!user) {
-      handleError('Usuário não autenticado');
-      return;
-    }
-
-    if (!newSeller.full_name || !newSeller.phone) {
-      handleValidationError();
-      return;
-    }
-
-    setIsSubmitting(true);
-
     try {
+      setIsSubmitting(true);
+
+      if (!user) {
+        toast({
+          title: 'Erro',
+          description: 'Usuário não autenticado',
+          variant: 'destructive',
+        });
+        return;
+      }
+
       const sellerData = {
-        ...newSeller,
+        full_name: newSeller.full_name,
+        phone: newSeller.phone,
+        email: newSeller.email || null,
+        image_path: newSeller.image_path || null,
+        active: newSeller.active || true,
+        auth_user_id: null,
         owner_id: user.id,
-        id: uuidv4(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       };
 
       const { data, error } = await supabase
@@ -331,17 +441,31 @@ const SellersManagement: React.FC = () => {
         .insert([sellerData])
         .select();
 
-      if (error) throw error;
+      if (error) {
+        toast({
+          title: 'Erro ao criar vendedor',
+          description: error.message,
+          variant: 'destructive',
+        });
+        return;
+      }
 
-      if (data) {
+      if (data && data[0]) {
         setSellers(prev => [...prev, data[0]]);
-        handleSuccess('Vendedor adicionado com sucesso');
+        toast({
+          title: 'Sucesso',
+          description: 'Vendedor criado com sucesso!',
+          variant: 'default',
+        });
         resetForm();
         setIsDialogOpen(false);
       }
     } catch (error) {
-      console.error('Erro ao criar vendedor:', error);
-      handleError('Erro ao criar vendedor');
+      toast({
+        title: 'Erro',
+        description: 'Erro ao criar vendedor',
+        variant: 'destructive',
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -349,45 +473,65 @@ const SellersManagement: React.FC = () => {
 
   // Função para atualizar vendedor existente
   const handleUpdateSeller = async () => {
-    if (!user?.id) {
-      handleError('Usuário não autenticado');
-      return;
-    }
-
-    if (!editingSellerId) {
-      handleError('ID do vendedor não encontrado');
-      return;
-    }
-
-    setIsSubmitting(true);
-
     try {
-      const { data, error } = await supabase
-        .from('sellers')
-        .update({
-          full_name: newSeller.full_name,
-          phone: newSeller.phone,
-          email: newSeller.email,
-          active: newSeller.active,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', editingSellerId)
-        .select();
+      setIsSubmitting(true);
 
-      if (error) throw error;
-
-      if (data) {
-        const updatedSellers = sellers.map(seller =>
-          seller.id === editingSellerId ? { ...seller, ...data[0] } : seller
-        );
-        setSellers(updatedSellers);
-        handleSuccess('Vendedor atualizado com sucesso');
-        resetForm();
-        setIsDialogOpen(false);
+      if (!editingSellerId || !user) {
+        toast({
+          title: 'Erro',
+          description: 'Dados inválidos',
+          variant: 'destructive',
+        });
+        return;
       }
+
+      const updatedSeller = {
+        full_name: newSeller.full_name,
+        phone: newSeller.phone,
+        email: newSeller.email || null,
+        image_path: newSeller.image_path || null,
+        active: newSeller.active || true,
+        updated_at: new Date().toISOString()
+      };
+
+      const { error } = await supabase
+        .from('sellers')
+        .update(updatedSeller)
+        .eq('id', editingSellerId)
+        .eq('owner_id', user.id);
+
+      if (error) {
+        toast({
+          title: 'Erro ao atualizar vendedor',
+          description: error.message,
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      setSellers(prev =>
+        prev.map(seller =>
+          seller.id === editingSellerId
+            ? { ...seller, ...updatedSeller }
+            : seller
+        )
+      );
+
+      toast({
+        title: 'Sucesso',
+        description: 'Vendedor atualizado com sucesso!',
+        variant: 'default',
+      });
+
+      resetForm();
+      setEditingSellerId(null);
+      setIsDialogOpen(false);
     } catch (error) {
-      console.error('Erro ao atualizar vendedor:', error);
-      handleError('Erro ao atualizar vendedor');
+      toast({
+        title: 'Erro',
+        description: 'Erro ao atualizar vendedor',
+        variant: 'destructive',
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -398,53 +542,107 @@ const SellersManagement: React.FC = () => {
     if (!selectedFile) return;
 
     try {
+      setUploadProgress(10); // Inicia o progresso
       const fileExt = selectedFile.name.split('.').pop();
-      const filePath = `${sellerId}/${uuidv4()}.${fileExt}`;
+      const fileName = `${Date.now()}-${Math.floor(Math.random() * 1000)}.${fileExt}`;
+      const filePath = `${sellerId}/${fileName}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from('sellers')
-        .upload(filePath, selectedFile);
+      const { data, error } = await supabase.storage
+        .from('sellers_images')
+        .upload(filePath, selectedFile, {
+          cacheControl: '3600',
+          upsert: false,
+        });
 
-      if (uploadError) throw uploadError;
+      if (error) {
+        throw error;
+      }
 
-      const { data: urlData } = supabase.storage
-        .from('sellers')
+      setUploadProgress(70);
+
+      // Obter URL pública da imagem
+      const { data: publicUrlData } = supabase.storage
+        .from('sellers_images')
         .getPublicUrl(filePath);
 
-      const { error: updateError } = await supabase
-        .from('sellers')
-        .update({
-          image_path: filePath,
-          imageUrl: urlData.publicUrl
-        })
-        .eq('id', sellerId);
+      setUploadProgress(90);
 
-      if (updateError) throw updateError;
+      // Usar a função do banco de dados para atualizar a imagem
+      const { data: rpcData, error: rpcError } = await supabase.rpc('update_seller_image', {
+        p_seller_id: sellerId,
+        p_image_path: filePath,
+        p_owner_id: user?.id
+      });
 
-      handleSuccess('Imagem atualizada com sucesso');
-      setSelectedFile(null);
-      setPreviewUrl('');
-    } catch (error) {
-      console.error('Erro ao fazer upload da imagem:', error);
-      handleError('Erro ao fazer upload da imagem');
+      if (rpcError) {
+        console.error('Erro ao atualizar imagem do vendedor:', rpcError);
+        throw new Error(`Erro ao atualizar imagem do vendedor: ${rpcError.message}`);
+      }
+
+      if (!rpcData) {
+        throw new Error('Falha ao atualizar imagem do vendedor.');
+      }
+
+      // Atualizar lista de vendedores
+      setSellers((prev) =>
+        prev.map((seller) =>
+          seller.id === sellerId
+            ? { ...seller, imageUrl: publicUrlData.publicUrl, image_path: filePath }
+            : seller
+        )
+      );
+
+      setUploadProgress(100);
+      toast({
+        title: 'Imagem enviada',
+        description: 'A imagem do vendedor foi atualizada com sucesso.',
+        variant: 'success',
+      });
+    } catch (error: any) {
+      console.error('Erro no upload de imagem:', error);
+      toast({
+        title: "Erro no upload",
+        description: error.message || "Ocorreu um erro ao fazer upload da imagem",
+        variant: "error",
+      });
     }
   };
 
   // Função para excluir vendedor do Supabase
   const handleDeleteSeller = async (id: string) => {
     try {
-      const { error } = await supabase
-        .from('sellers')
-        .delete()
-        .eq('id', id);
+      // Usar a função do banco de dados para desativar o vendedor
+      const { data: rpcData, error: rpcError } = await supabase.rpc('deactivate_seller', {
+        p_seller_id: id,
+        p_owner_id: user?.id
+      });
 
-      if (error) throw error;
+      if (rpcError) {
+        console.error('Erro ao desativar vendedor:', rpcError);
+        throw new Error(`Erro ao desativar vendedor: ${rpcError.message}`);
+      }
 
-      setSellers(sellers.filter(seller => seller.id !== id));
-      handleSuccess('Vendedor removido com sucesso');
-    } catch (error) {
-      console.error('Erro ao excluir vendedor:', error);
-      handleError('Erro ao excluir vendedor');
+      if (!rpcData) {
+        throw new Error('Falha ao desativar vendedor.');
+      }
+
+      setSellers((prev) => prev.filter((seller) => seller.id !== id));
+      toast({
+        title: "Vendedor removido",
+        description: "O vendedor foi desativado com sucesso",
+        variant: "success",
+      });
+
+      if (selectedSellerId === id) {
+        setSelectedSellerId(null);
+      }
+    } catch (error: any) {
+      console.error('Erro ao remover vendedor:', error);
+      toast({
+        title: "Erro ao remover",
+        description: error.message || "Ocorreu um erro ao remover o vendedor",
+        variant: "error",
+      });
     }
   };
 
@@ -452,12 +650,12 @@ const SellersManagement: React.FC = () => {
     setNewSeller({
       full_name: seller.full_name,
       phone: seller.phone,
-      email: seller.email,
-      image_path: seller.image_path,
-      active: seller.active,
+      email: seller.email || '',
+      image_path: seller.image_path || '',
+      active: seller.active || true
     });
+    setPreviewUrl(seller.image_path || '');
     setEditingSellerId(seller.id);
-    setPreviewUrl(seller.image_path ? seller.image_path : '');
     setIsDialogOpen(true);
   };
 
@@ -486,6 +684,7 @@ const SellersManagement: React.FC = () => {
       full_name: '',
       phone: '',
       email: '',
+      imageUrl: '',
       image_path: '',
       active: true,
     });
@@ -524,45 +723,47 @@ const SellersManagement: React.FC = () => {
           <div className="flex items-center space-x-3">
             {/* Avatar do vendedor */}
             <div className="relative h-12 w-12 rounded-full overflow-hidden bg-gray-100 border border-gray-200">
-              {seller.image_path ? (
-                <img
-                  src={seller.image_path}
+          {seller.imageUrl ? (
+            <img
+              src={seller.imageUrl}
                   alt={`${seller.full_name}`}
                   className="h-full w-full object-cover"
-                />
-              ) : (
-                <div className="h-full w-full flex items-center justify-center bg-gray-100">
-                  <User size={24} className="text-gray-400" />
-                </div>
-              )}
+            />
+          ) : (
+                <div className="flex items-center justify-center h-full w-full bg-green-100 text-green-600 font-semibold text-lg">
+                  {initials}
+            </div>
+          )}
               <span 
                 className={`absolute bottom-0 right-0 h-3 w-3 rounded-full ${
                   isOnline ? 'bg-green-500' : 'bg-gray-400'
                 } border-2 border-white`}
               />
-            </div>
+        </div>
             
             {/* Nome e data */}
             <div>
               <h3 className="font-semibold text-gray-800">{seller.full_name}</h3>
               <p className="text-xs text-gray-500">
-                {formatDate(seller.created_at)}
+                {format(new Date(seller.created_at), "dd 'de' MMMM 'de' yyyy", {
+                  locale: ptBR,
+                })}
               </p>
-            </div>
-          </div>
+        </div>
+        </div>
           
           {/* Botões de ação */}
           <div className="flex space-x-1">
-            <Button
-              onClick={() => handleEditSeller(seller)}
+          <Button
+            onClick={() => handleEditSeller(seller)}
               variant="ghost"
               size="icon"
               className="h-8 w-8 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full"
-            >
+          >
               <Edit size={16} />
-            </Button>
+          </Button>
             
-            <Button
+          <Button
               onClick={() => handleDeleteSeller(seller.id)}
               variant="ghost"
               size="icon"
@@ -796,64 +997,55 @@ const SellersManagement: React.FC = () => {
     return result;
   };
 
-  // Função para lidar com erro de validação
-  const handleValidationError = () => {
-    toast({
-      title: 'Dados incompletos',
-      description: 'Por favor, preencha todos os campos obrigatórios.',
-      variant: 'destructive',
-    });
-  };
-
-  // Função para lidar com sucesso
-  const handleSuccess = (message: string) => {
-    toast({
-      title: 'Sucesso',
-      description: message,
-      variant: 'default',
-    });
-  };
-
-  // Função para lidar com erro
-  const handleError = (message: string) => {
-    toast({
-      title: 'Erro',
-      description: message,
-      variant: 'destructive',
-    });
+  // Função para redirecionar para a página de login
+  const redirectToLogin = () => {
+    // Limpar qualquer estado local ou sessão para evitar loops
+    localStorage.removeItem('supabase.auth.token');
+    sessionStorage.removeItem('session_recovery_attempted');
+    
+    // Redirecionar para a página de login
+    window.location.href = '/login?redirect=/sellers';
   };
 
   // Atualizar a função para incluir indicador de carregamento
   const handleResendPasswordReset = async (sellerId: string, email: string | undefined) => {
     if (!email) {
       toast({
-        title: 'Email não encontrado',
-        description: 'Este vendedor não possui um email associado.',
-        variant: 'destructive',
+        title: "Email não encontrado",
+        description: "Este vendedor não possui um email associado.",
+        variant: "destructive",
       });
       return;
     }
 
+    // Atualizar o estado para mostrar carregamento para este vendedor específico
     setSendingEmails(prev => ({ ...prev, [sellerId]: true }));
 
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email);
+      // URL para onde o usuário será redirecionado
+      const redirectTo = `${window.location.origin}/recover-password`;
+      
+      // Enviar email de recuperação de senha via Supabase
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo
+      });
 
       if (error) throw error;
 
       toast({
-        title: 'Email enviado',
-        description: 'Um link de redefinição de senha foi enviado para o vendedor.',
-        variant: 'default',
+        title: "Email enviado",
+        description: "Um link de redefinição de senha foi enviado para o vendedor.",
+        variant: "success",
       });
-    } catch (error) {
-      console.error('Erro ao enviar email:', error);
+    } catch (error: any) {
+      console.error("Erro ao enviar email:", error);
       toast({
-        title: 'Erro ao enviar',
-        description: 'Não foi possível enviar o email de redefinição.',
-        variant: 'destructive',
+        title: "Erro ao enviar",
+        description: error.message || "Não foi possível enviar o email de redefinição.",
+        variant: "destructive",
       });
     } finally {
+      // Remover status de carregamento após completar
       setSendingEmails(prev => ({ ...prev, [sellerId]: false }));
     }
   };
@@ -922,26 +1114,6 @@ const SellersManagement: React.FC = () => {
       setSendingEmails(prev => ({ ...prev, [sellerId]: false }));
     }
   };
-
-  const formatDate = (date: string | null) => {
-    if (!date) return '-';
-    return format(new Date(date), "dd 'de' MMMM 'de' yyyy", {
-      locale: ptBR,
-    });
-  };
-
-  const mapSupabaseSeller = (data: SellerRow): Seller => ({
-    id: data.id,
-    full_name: data.full_name,
-    email: data.email || undefined,
-    phone: data.phone,
-    image_path: data.image_path || undefined,
-    active: data.active || false,
-    auth_user_id: data.auth_user_id || undefined,
-    owner_id: data.owner_id,
-    created_at: data.created_at || undefined,
-    updated_at: data.updated_at || undefined
-  });
 
   return (
     <Layout>

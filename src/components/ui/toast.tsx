@@ -27,12 +27,12 @@ const toastVariants = cva(
   {
     variants: {
       variant: {
-        default: "border bg-background text-foreground",
+        default: "border bg-background",
         destructive:
           "destructive group border-destructive bg-destructive text-destructive-foreground",
-        success: "group border-success bg-success text-success-foreground",
-        warning: "group border-warning bg-warning text-warning-foreground",
-        error: "group border-error bg-error text-error-foreground"
+        success: "border-green-500 bg-green-100 text-green-900",
+        error: "border-red-500 bg-red-100 text-red-900",
+        warning: "border-yellow-500 bg-yellow-100 text-yellow-900"
       },
     },
     defaultVariants: {
@@ -113,9 +113,7 @@ const ToastDescription = React.forwardRef<
 ))
 ToastDescription.displayName = ToastPrimitives.Description.displayName
 
-interface ToastProps extends React.HTMLAttributes<HTMLDivElement> {
-  variant?: "default" | "destructive" | "success" | "warning" | "error"
-}
+type ToastProps = React.ComponentPropsWithoutRef<typeof Toast>
 
 type ToastActionElement = React.ReactElement<typeof ToastAction>
 

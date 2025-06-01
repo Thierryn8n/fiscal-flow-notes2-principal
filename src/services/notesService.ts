@@ -1,60 +1,109 @@
-import { supabase } from '@/integrations/supabase/client';
-import { supabaseAdmin } from '@/lib/supabaseClient';
-import { FiscalNote, NoteFilters, NoteStatus } from '@/types/FiscalNote';
-import { ThumbnailService } from './thumbnailService';
+import { Database } from '@/types/supabase';
+import { supabase } from '@/lib/supabase';
+
+// Tipos do Supabase
+type Tables = Database['public']['Tables'];
+type NoteRow = Tables['fiscal_notes']['Row'];
+type NoteInsert = Tables['fiscal_notes']['Insert'];
+type NoteUpdate = Tables['fiscal_notes']['Update'];
+type Json = Database['public']['Tables']['fiscal_notes']['Row']['note_data'];
+
+// Tipos locais
+export type NoteStatus = 'draft' | 'pending' | 'finalized' | 'cancelled';
+
+export interface CustomerAddress {
+  street: string;
+  number: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+  zipCode: string;
+}
+
+export interface CustomerData {
+  name: string;
+  email?: string;
+  phone?: string;
+  address: CustomerAddress;
+}
+
+export interface NoteProduct {
+  id: string;
+  name: string;
+  quantity: number;
+  price: number;
+  total: number;
+  unit: string;
+  ncm: string;
+}
+
+export interface PaymentData {
+  method: 'money' | 'credit_card' | 'debit_card' | 'pix' | 'bank_transfer';
+  installments?: number;
+  status: 'pending' | 'paid' | 'cancelled';
+  paid_at?: string;
+  total_paid?: number;
+}
+
+// Interface principal da nota fiscal
+export interface FiscalNote extends Omit<NoteRow, 'note_data' | 'payment_data'> {
+  note_data: {
+    customer: CustomerData;
+    products: NoteProduct[];
+  };
+  payment_data: PaymentData;
+}
+
+// Interface para filtros de busca
+export interface NoteFilters {
+  startDate?: string;
+  endDate?: string;
+  status?: NoteStatus;
+  noteNumber?: string;
+  customerName?: string;
+}
 
 export class NotesService {
-  // Tabela no Supabase
-  private static readonly TABLE_NAME = 'fiscal_notes';
+  private static readonly TABLE_NAME = 'fiscal_notes' as const;
 
   /**
    * Converte uma FiscalNote de camelCase para snake_case
    */
-  private static toSnakeCase(note: FiscalNote): any {
-    // Cria um objeto básico com as propriedades comuns
-    const result: any = {
+  private static toSnakeCase(note: FiscalNote): NoteInsert {
+    return {
       id: note.id,
       note_number: note.noteNumber,
       date: note.date,
-      products: note.products,
-      customer_data: note.customerData,
-      payment_data: note.paymentData,
+      customer_data: note.customerData as Json,
+      products: note.products as unknown as Json,
+      payment_data: note.paymentData as Json,
       total_value: note.totalValue,
       status: note.status,
-      owner_id: note.ownerId
+      owner_id: note.ownerId,
+      printed_at: note.printedAt || null,
+      created_at: note.createdAt || null,
+      updated_at: note.updatedAt || null,
+      note_data: {}
     };
-    
-    // Apenas adiciona seller_id e seller_name se eles existirem
-    if (note.sellerId) {
-      result.seller_id = note.sellerId;
-    }
-    
-    if (note.sellerName) {
-      result.seller_name = note.sellerName;
-    }
-    
-    return result;
   }
 
   /**
    * Converte um objeto do banco de dados para FiscalNote (snake_case para camelCase)
    */
-  private static toCamelCase(data: any): FiscalNote {
+  private static toCamelCase(data: NoteRow): FiscalNote {
     return {
       id: data.id,
       noteNumber: data.note_number,
       date: data.date,
-      products: data.products,
-      customerData: data.customer_data,
-      paymentData: data.payment_data,
+      customerData: data.customer_data as CustomerData,
+      products: data.products as unknown as NoteProduct[],
+      paymentData: data.payment_data as PaymentData,
       totalValue: data.total_value,
       status: data.status as NoteStatus,
-      sellerId: data.seller_id,
-      sellerName: data.seller_name,
       ownerId: data.owner_id,
-      createdAt: data.created_at,
-      updatedAt: data.updated_at,
-      printedAt: data.printed_at
+      printedAt: data.printed_at || undefined,
+      createdAt: data.created_at || undefined,
+      updatedAt: data.updated_at || undefined
     };
   }
 
@@ -135,87 +184,22 @@ export class NotesService {
    * Busca todas as notas fiscais com base nos filtros
    */
   static async getNotes(
-    userId: string,
+    ownerId: string,
     filters?: NoteFilters,
     page: number = 1,
-    pageSize: number = 20,
-    isOwner: boolean = false
-  ): Promise<{ data: FiscalNote[], count: number }> {
-    try {
-      // Iniciar a consulta
-      let query = supabase
-        .from(this.TABLE_NAME)
-        .select('*', { count: 'exact' });
-      
-      // Se for o proprietário, buscar por owner_id, senão buscar por seller_id
-      if (isOwner) {
-        query = query.eq('owner_id', userId);
-      } else {
-        // Se for vendedor, buscar apenas suas notas
-        query = query.eq('seller_id', userId);
-      }
+    pageSize: number = 20
+  ): Promise<{ data: FiscalNote[]; count: number }> {
+    const { data, error, count } = await supabase
+      .from(this.TABLE_NAME)
+      .select('*', { count: 'exact' })
+      .eq('owner_id', ownerId)
+      .order('created_at', { ascending: false })
+      .range((page - 1) * pageSize, page * pageSize - 1);
 
-      // Aplicar filtros se existirem
-      if (filters) {
-        // Filtro por período
-        if (filters.startDate) {
-          query = query.gte('date', filters.startDate);
-        }
-        if (filters.endDate) {
-          query = query.lte('date', filters.endDate);
-        }
+    if (error) throw error;
+    if (!data) return { data: [], count: 0 };
 
-        // Filtro por status
-        if (filters.status) {
-          if (Array.isArray(filters.status)) {
-            query = query.in('status', filters.status);
-          } else {
-            query = query.eq('status', filters.status);
-          }
-        }
-
-        // Filtro por vendedor (apenas para owner)
-        if (filters.sellerId && isOwner) {
-          query = query.eq('seller_id', filters.sellerId);
-        }
-
-        // Filtro por valor
-        if (filters.minValue !== undefined) {
-          query = query.gte('total_value', filters.minValue);
-        }
-        if (filters.maxValue !== undefined) {
-          query = query.lte('total_value', filters.maxValue);
-        }
-
-        // Filtro por termo de busca (em vários campos)
-        if (filters.searchTerm) {
-          query = query.or(
-            `note_number.ilike.%${filters.searchTerm}%,customer_data->name.ilike.%${filters.searchTerm}%`
-          );
-        }
-      }
-
-      // Aplicar paginação
-      const from = (page - 1) * pageSize;
-      const to = from + pageSize - 1;
-      
-      query = query
-        .order('created_at', { ascending: false })
-        .range(from, to);
-
-      // Executar a consulta
-      const { data, error, count } = await query;
-
-      if (error) throw error;
-      
-      return {
-        data: data ? data.map(item => this.toCamelCase(item)) : [],
-        count: count || 0
-      };
-    } catch (error) {
-      console.error('Erro ao buscar notas fiscais:', error);
-      return { data: [], count: 0 };
-    }
+    return { data: data as FiscalNote[], count: count || 0 };
   }
 
   /**
@@ -231,7 +215,7 @@ export class NotesService {
         .single();
 
       if (error) throw error;
-      return data ? this.toCamelCase(data) : null;
+      return data as FiscalNote | null;
     } catch (error) {
       console.error('Erro ao buscar nota fiscal por ID:', error);
       return null;
@@ -276,22 +260,6 @@ export class NotesService {
    */
   static async deleteNote(id: string, ownerId: string): Promise<boolean> {
     try {
-      // Primeiro verificamos se a nota é um rascunho
-      const { data: note, error: fetchError } = await supabase
-        .from(this.TABLE_NAME)
-        .select('status')
-        .eq('id', id)
-        .eq('owner_id', ownerId)
-        .single();
-
-      if (fetchError) throw fetchError;
-
-      // Se não for rascunho, não permitimos a exclusão
-      if (note.status !== 'draft') {
-        throw new Error('Apenas notas em rascunho podem ser excluídas');
-      }
-
-      // Excluir a nota
       const { error } = await supabase
         .from(this.TABLE_NAME)
         .delete()
@@ -299,13 +267,9 @@ export class NotesService {
         .eq('owner_id', ownerId);
 
       if (error) throw error;
-      
-      // Excluir a miniatura associada
-      await ThumbnailService.deleteThumbnail(id);
-      
       return true;
     } catch (error) {
-      console.error('Erro ao excluir nota fiscal:', error);
+      console.error('Erro ao excluir nota:', error);
       return false;
     }
   }
@@ -320,43 +284,36 @@ export class NotesService {
   /**
    * Marca uma nota fiscal como paga
    */
-  static async markAsPaid(
-    id: string,
-    userId: string
-  ): Promise<boolean> {
+  static async markAsPaid(id: string, ownerId: string): Promise<boolean> {
     try {
-      // Primeiro buscar a nota atual para obter os dados de pagamento
       const { data: currentNote, error: fetchError } = await supabase
         .from(this.TABLE_NAME)
         .select('*')
         .eq('id', id)
-        .eq('owner_id', userId)
+        .eq('owner_id', ownerId)
         .single();
 
       if (fetchError || !currentNote) {
         throw new Error('Nota não encontrada');
       }
 
-      // Atualizar os dados de pagamento para incluir informação de pagamento
-      const paymentData = currentNote.payment_data || {};
-      paymentData.paid = true;
-      paymentData.paidAt = new Date().toISOString();
-
-      const updates = {
-        payment_data: paymentData,
-        updated_at: new Date().toISOString()
+      const paymentData = {
+        ...(currentNote.payment_data as PaymentData),
+        paid: true,
+        paidAt: new Date().toISOString()
       };
 
-      // Se a nota não estiver finalizada, finalizá-la
-      if (currentNote.status !== 'finalized') {
-        updates.status = 'finalized';
-      }
+      const updates: NoteUpdate = {
+        payment_data: paymentData as Json,
+        status: currentNote.status !== 'finalized' ? 'finalized' : currentNote.status,
+        updated_at: new Date().toISOString()
+      };
 
       const { error } = await supabase
         .from(this.TABLE_NAME)
         .update(updates)
         .eq('id', id)
-        .eq('owner_id', userId);
+        .eq('owner_id', ownerId);
 
       if (error) throw error;
       return true;
@@ -364,5 +321,92 @@ export class NotesService {
       console.error('Erro ao marcar nota como paga:', error);
       return false;
     }
+  }
+
+  static async getNote(id: string): Promise<FiscalNote | null> {
+    const { data, error } = await supabase
+      .from(this.TABLE_NAME)
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) throw error;
+    return data as FiscalNote | null;
+  }
+
+  static async createNote(note: Omit<FiscalNote, 'id' | 'created_at' | 'updated_at'>): Promise<FiscalNote> {
+    const { data, error } = await supabase
+      .from(this.TABLE_NAME)
+      .insert({
+        note_number: note.note_number,
+        note_data: {
+          customer: note.note_data.customer,
+          products: note.note_data.products
+        } as unknown as Json,
+        payment_data: {
+          method: note.payment_data.method,
+          installments: note.payment_data.installments,
+          status: note.payment_data.status,
+          paid_at: note.payment_data.paid_at,
+          total_paid: note.payment_data.total_paid
+        } as unknown as Json,
+        total_value: note.total_value,
+        status: note.status,
+        owner_id: note.owner_id,
+        printed_at: note.printed_at
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    if (!data) throw new Error('Erro ao criar nota fiscal');
+
+    return data as FiscalNote;
+  }
+
+  static async updateNote(id: string, note: Partial<Omit<FiscalNote, 'id' | 'created_at' | 'updated_at'>>): Promise<FiscalNote> {
+    const updateData: NoteUpdate = {};
+
+    if (note.note_number) updateData.note_number = note.note_number;
+    if (note.note_data) {
+      updateData.note_data = {
+        customer: note.note_data.customer,
+        products: note.note_data.products
+      } as unknown as Json;
+    }
+    if (note.payment_data) {
+      updateData.payment_data = {
+        method: note.payment_data.method,
+        installments: note.payment_data.installments,
+        status: note.payment_data.status,
+        paid_at: note.payment_data.paid_at,
+        total_paid: note.payment_data.total_paid
+      } as unknown as Json;
+    }
+    if (note.total_value) updateData.total_value = note.total_value;
+    if (note.status) updateData.status = note.status;
+    if (note.owner_id) updateData.owner_id = note.owner_id;
+    if (note.printed_at) updateData.printed_at = note.printed_at;
+
+    const { data, error } = await supabase
+      .from(this.TABLE_NAME)
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    if (!data) throw new Error('Erro ao atualizar nota fiscal');
+
+    return data as FiscalNote;
+  }
+
+  static async deleteNote(id: string): Promise<void> {
+    const { error } = await supabase
+      .from(this.TABLE_NAME)
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
   }
 }

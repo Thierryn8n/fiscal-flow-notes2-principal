@@ -35,7 +35,7 @@ export interface Database {
           image_path?: string | null;
           ncm?: string | null;
           unit?: string | null;
-          quantity: number;
+          quantity?: number;
           total_amount?: number | null;
           category_id?: string | null;
           owner_id: string;
@@ -68,18 +68,71 @@ export interface Database {
           created_at: string | null;
           updated_at: string | null;
         };
+        Insert: {
+          id?: string;
+          name: string;
+          description?: string | null;
+          icon?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          description?: string | null;
+          icon?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
       };
       ecommerce_settings: {
         Row: {
           id: string;
-          owner_id: string;
-          accent_color: string | null;
+          store_name: string;
+          store_description: string | null;
+          logo_url: string | null;
+          banner_url: string | null;
+          primary_color: string | null;
+          secondary_color: string | null;
           background_color: string | null;
-          banner_image_url: string | null;
-          border_radius: number | null;
-          button_style: string | null;
+          contact_phone: string | null;
+          contact_email: string | null;
+          contact_address: string | null;
+          owner_id: string;
           created_at: string | null;
           updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          store_name: string;
+          store_description?: string | null;
+          logo_url?: string | null;
+          banner_url?: string | null;
+          primary_color?: string | null;
+          secondary_color?: string | null;
+          background_color?: string | null;
+          contact_phone?: string | null;
+          contact_email?: string | null;
+          contact_address?: string | null;
+          owner_id: string;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          store_name?: string;
+          store_description?: string | null;
+          logo_url?: string | null;
+          banner_url?: string | null;
+          primary_color?: string | null;
+          secondary_color?: string | null;
+          background_color?: string | null;
+          contact_phone?: string | null;
+          contact_email?: string | null;
+          contact_address?: string | null;
+          owner_id?: string;
+          created_at?: string | null;
+          updated_at?: string | null;
         };
       };
       product_reviews: {
@@ -103,9 +156,9 @@ export interface Database {
           product_name: string;
           seller_id: string;
           seller_name: string;
-          status: 'pending' | 'processing' | 'completed' | 'cancelled';
+          status: string;
           notes: string | null;
-          total_amount: number | null;
+          total_amount: number;
           owner_id: string;
           created_at: string | null;
           updated_at: string | null;
@@ -118,9 +171,9 @@ export interface Database {
           product_name: string;
           seller_id: string;
           seller_name: string;
-          status: 'pending' | 'processing' | 'completed' | 'cancelled';
+          status: string;
           notes?: string | null;
-          total_amount?: number | null;
+          total_amount: number;
           owner_id: string;
           created_at?: string | null;
           updated_at?: string | null;
@@ -133,9 +186,9 @@ export interface Database {
           product_name?: string;
           seller_id?: string;
           seller_name?: string;
-          status?: 'pending' | 'processing' | 'completed' | 'cancelled';
+          status?: string;
           notes?: string | null;
-          total_amount?: number | null;
+          total_amount?: number;
           owner_id?: string;
           created_at?: string | null;
           updated_at?: string | null;
@@ -145,29 +198,160 @@ export interface Database {
         Row: {
           id: string;
           name: string;
-          phone: string;
           email: string | null;
+          phone: string;
           address: Json;
-          signature: string | null;
           owner_id: string;
           created_at: string | null;
           updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          email?: string | null;
+          phone: string;
+          address: Json;
+          owner_id: string;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          email?: string | null;
+          phone?: string;
+          address?: Json;
+          owner_id?: string;
+          created_at?: string | null;
+          updated_at?: string | null;
         };
       };
       sellers: {
         Row: {
           id: string;
-          full_name: string;
+          name: string;
           email: string | null;
-          phone: string;
-          image_path: string | null;
+          phone: string | null;
           active: boolean | null;
           auth_user_id: string | null;
           owner_id: string;
           created_at: string | null;
           updated_at: string | null;
         };
+        Insert: {
+          id?: string;
+          name: string;
+          email?: string | null;
+          phone?: string | null;
+          active?: boolean | null;
+          auth_user_id?: string | null;
+          owner_id: string;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          email?: string | null;
+          phone?: string | null;
+          active?: boolean | null;
+          auth_user_id?: string | null;
+          owner_id?: string;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
       };
+      fiscal_notes: {
+        Row: {
+          id: string;
+          note_number: string;
+          note_data: Json;
+          payment_data: Json;
+          total_value: number;
+          status: string;
+          owner_id: string;
+          printed_at: string | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          note_number: string;
+          note_data: Json;
+          payment_data: Json;
+          total_value: number;
+          status: string;
+          owner_id: string;
+          printed_at?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          note_number?: string;
+          note_data?: Json;
+          payment_data?: Json;
+          total_value?: number;
+          status?: string;
+          owner_id?: string;
+          printed_at?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+      };
+      print_requests: {
+        Row: {
+          id: string;
+          note_id: string;
+          print_settings_id: string | null;
+          device_id: string | null;
+          copies: number | null;
+          status: string;
+          error_message: string | null;
+          created_by: string;
+          created_at: string;
+          updated_at: string | null;
+          note_data: Json;
+        };
+        Insert: {
+          id?: string;
+          note_id: string;
+          print_settings_id?: string | null;
+          device_id?: string | null;
+          copies?: number | null;
+          status: string;
+          error_message?: string | null;
+          created_by: string;
+          created_at?: string;
+          updated_at?: string | null;
+          note_data: Json;
+        };
+        Update: {
+          id?: string;
+          note_id?: string;
+          print_settings_id?: string | null;
+          device_id?: string | null;
+          copies?: number | null;
+          status?: string;
+          error_message?: string | null;
+          created_by?: string;
+          created_at?: string;
+          updated_at?: string | null;
+          note_data?: Json;
+        };
+      };
+    };
+    Views: {
+      [_ in never]: never;
+    };
+    Functions: {
+      [_ in never]: never;
+    };
+    Enums: {
+      [_ in never]: never;
+    };
+    CompositeTypes: {
+      [_ in never]: never;
     };
   };
 } 

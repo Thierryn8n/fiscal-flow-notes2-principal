@@ -12,26 +12,12 @@ import { ProductsService, Product as ProductType } from '@/services/productsServ
 import { checkAuthAndRLS } from '@/lib/supabaseClient';
 import { useSessionRefresh } from '@/hooks/useSessionRefresh';
 import type { Database } from '@/types/supabase';
+import { EcommerceService, type EcommerceProduct } from '@/services/ecommerceService';
 
 type Tables = Database['public']['Tables'];
 type EcommerceProductRow = Tables['ecommerce_products']['Row'];
 
-interface Product {
-  id: string;
-  name: string;
-  code: string;
-  description: string;
-  price: number;
-  image_path?: string;
-  ncm: string;
-  unit: string;
-  quantity: number;
-  total_amount?: number;
-  category_id?: string;
-  owner_id: string;
-  created_at?: string;
-  updated_at?: string;
-}
+interface Product extends EcommerceProduct {}
 
 interface FormData extends Omit<Product, 'id' | 'created_at' | 'updated_at'> {
   image_path: string;
@@ -185,407 +171,83 @@ const ProductManagement: React.FC = () => {
   const [formData, setFormData] = useState<FormData>(defaultFormData);
 
   useEffect(() => {
-    const fetchProducts = async () => {
-      if (!user) {
-        console.log('Usuário não autenticado.');
-        toast({
-          title: 'Aviso',
-          description: 'Usuário não autenticado. Faça login para ver os produtos.',
-          variant: 'warning'
-        });
-        setIsLoading(false);
-        return;
-      }
+    if (user) {
+      loadProducts();
+    }
+  }, [user]);
 
-      setIsLoading(true);
-      
-      try {
-        // Verificar e renovar a sessão se necessário usando o hook
-        const sessionStatus = await checkActiveSession();
-        console.log('Status da sessão:', sessionStatus);
-        
-        if (!sessionStatus.active) {
-          console.error('Sessão inválida. Redirecionando para login...');
-          
-          // Tentar renovar uma última vez
-          const forceRenewed = await refreshSession();
-          if (!forceRenewed) {
-            setTimeout(() => {
-              window.location.href = '/login';
-            }, 2000);
-            return;
-          }
-        }
-        
-        // Usar o ID da sessão atualizada
-        const userId = sessionStatus.userId || user.id;
-        console.log('Buscando produtos para o usuário:', userId);
-        
-        // Executar diagnóstico para verificar autenticação e RLS
-        try {
-          const resultado = await checkAuthAndRLS();
-          console.log('Diagnóstico de autenticação e RLS:', resultado);
-          
-          if (!resultado.autenticado) {
-            toast({
-              title: 'Erro de autenticação',
-              description: 'Não foi possível autenticar. Tente fazer login novamente.',
-              variant: 'error'
-            });
-            setIsLoading(false);
-            return;
-          }
-          
-          if (resultado.tokenExpirado) {
-            console.warn('Token expirado detectado pelo diagnóstico. Tentando renovar...');
-            const renewed = await refreshSession();
-            if (!renewed) {
-              toast({
-                title: 'Token expirado',
-                description: 'Seu token de acesso expirou e não foi possível renovar. Faça login novamente.',
-                variant: 'error'
-              });
-              setTimeout(() => {
-                window.location.href = '/login';
-              }, 2000);
-              return;
-            }
-          }
-          
-          if (!resultado.acessoRLS) {
-            console.error('Erro de acesso RLS:', resultado.erro);
-            toast({
-              title: 'Erro de permissão',
-              description: 'Não foi possível acessar seus produtos. Verifique as permissões RLS.',
-              variant: 'error'
-            });
-            setIsLoading(false);
-            return;
-          }
-        } catch (diagError) {
-          console.error('Erro durante diagnóstico:', diagError);
-          // Continuar mesmo com erro no diagnóstico
-        }
-
-        // Buscar os produtos usando o serviço
-        const { products: fetchedProducts, count } = await ProductsService.getUserProducts(userId);
-        
-        if (fetchedProducts && fetchedProducts.length > 0) {
-          console.log(`Carregados ${fetchedProducts.length} produtos de um total de ${count}`);
-          
-            // Transformar os dados para garantir compatibilidade
-          const processedProducts = fetchedProducts.map(p => ({
-              id: p.id,
-              name: p.name,
-              code: p.code,
-              price: p.price,
-              description: p.description || '',
-              image_path: p.image_path || p.imageUrl || '',
-              ncm: p.ncm || '',
-              unit: p.unit || 'UN',
-              quantity: typeof p.quantity === 'number' ? p.quantity : 0,
-              total_amount: p.total || 0
-          }));
-          
-          setProducts(processedProducts);
-          } else {
-          console.log('Nenhum produto encontrado.');
-          setProducts([]);
-          
-          // Se o usuário não tem produtos, oferecer adicionar um novo
-          toast({
-            title: 'Sem produtos',
-            description: 'Você ainda não tem produtos cadastrados. Clique em "Novo Produto" para adicionar.',
-            variant: 'info'
-          });
-        }
-      } catch (error) {
-        console.error('Erro ao carregar produtos:', error);
-        toast({
-          title: 'Erro',
-          description: 'Não foi possível carregar os produtos. Verifique o console para mais detalhes.',
-          variant: 'error'
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
-    fetchProducts();
-    
-    // Configurar verificação periódica da sessão
-    const sessionCheckInterval = setInterval(async () => {
-      if (document.visibilityState === 'visible') {
-        console.log('Verificação periódica da sessão...');
-        const status = await checkActiveSession();
-        if (status.renewed) {
-          console.log('Sessão renovada durante verificação periódica');
-        }
-      }
-    }, 60000); // Verificar a cada minuto quando a página estiver visível
-    
-    return () => clearInterval(sessionCheckInterval);
-  }, [user, toast, checkActiveSession, refreshSession]);
-
-  const handleAddProduct = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user) {
-      toast({
-        title: 'Erro',
-        description: 'Usuário não autenticado.',
-        variant: 'error'
-      });
-      return;
-    }
-    
-    // Verificar sessão ativa antes de prosseguir
-    const { data: sessionData } = await supabase.auth.getSession();
-    if (!sessionData.session) {
-      toast({
-        title: 'Sessão expirada',
-        description: 'Sua sessão expirou. Por favor, faça login novamente.',
-        variant: 'error'
-      });
-      setTimeout(() => {
-        window.location.href = '/login';
-      }, 2000);
-      return;
-    }
-    
-    // Garantir que estamos usando o ID da sessão atual
-    const userId = sessionData.session.user.id;
-    
-    if (!formData.name || !formData.code || formData.price <= 0) {
-      toast({
-        title: 'Campos obrigatórios',
-        description: 'Por favor, preencha nome, código e preço.',
-        variant: 'error'
-      });
-      return;
-    }
-    
-    // Verificar comprimento do código
-    if (formData.code.length > 9) {
-      toast({
-        title: 'Código muito longo',
-        description: 'O código deve ter no máximo 9 caracteres.',
-        variant: 'error'
-      });
-      return;
-    }
-    
+  const loadProducts = async () => {
     try {
-      console.log('Adicionando novo produto...');
-      
-      // Limitar tamanho dos campos para evitar erros de BD
-      const safeCode = formData.code.slice(0, 9);
-      const safeNcm = formData.ncm?.slice(0, 9) || '';
-      const safeUnit = formData.unit?.slice(0, 9) || '';
-      
-      // Preparar objeto do produto com campos básicos
-      const newProduct: Partial<ProductType> = {
-        name: formData.name,
-        code: safeCode,
-        price: formData.price,
-        description: formData.description || formData.name,
-        ncm: safeNcm,
-        unit: safeUnit,
-        quantity: formData.quantity,
-        owner_id: userId, // Usar o ID da sessão atual
-        category_id: null
-      };
-      
-      // Tratar upload de imagem se houver
-      if (imageFile) {
-        const filePath = await ProductsService.uploadProductImage(userId, imageFile);
-        newProduct.image_path = filePath;
-      }
+      setIsLoading(true);
+      const fetchedProducts = await EcommerceService.getProducts(user!.id);
+      setProducts(fetchedProducts);
+    } catch (error) {
+      console.error('Erro ao carregar produtos:', error);
+      toast({
+        title: 'Erro ao carregar produtos',
+        description: 'Não foi possível carregar a lista de produtos.',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-      // Adicionar produto usando o serviço
-      const addedProduct = await ProductsService.addProduct(newProduct as Omit<ProductType, 'id'>);
-      
+  const handleAddProduct = async (product: Omit<Product, 'id'>) => {
+    try {
+      const newProduct = await EcommerceService.createProduct({
+        ...product,
+        owner_id: user!.id
+      });
+      setProducts(prev => [...prev, newProduct]);
       toast({
         title: 'Produto adicionado',
-        description: 'Produto adicionado com sucesso.',
+        description: 'O produto foi adicionado com sucesso.',
         variant: 'success'
       });
-      
-      // Atualizar a lista de produtos
-      setProducts(prevProducts => [
-        {
-          id: addedProduct.id,
-          name: addedProduct.name,
-          code: addedProduct.code,
-          price: addedProduct.price,
-          description: addedProduct.description || '',
-          image_path: addedProduct.image_path || '',
-          ncm: addedProduct.ncm || '',
-          unit: addedProduct.unit || 'UN',
-          quantity: addedProduct.quantity || 0,
-          total_amount: 0
-        },
-        ...prevProducts
-      ]);
-      
-      // Limpar formulário
-      setFormData({ ...defaultFormData, owner_id: userId });
-      setImageFile(null);
-      setIsAddModalOpen(false);
     } catch (error) {
       console.error('Erro ao adicionar produto:', error);
       toast({
-        title: 'Erro',
+        title: 'Erro ao adicionar produto',
         description: 'Não foi possível adicionar o produto.',
-        variant: 'error'
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const handleUpdateProduct = async (id: string, updates: Partial<Product>) => {
+    try {
+      const updatedProduct = await EcommerceService.updateProduct(id, updates);
+      setProducts(prev => prev.map(p => p.id === id ? updatedProduct : p));
+      toast({
+        title: 'Produto atualizado',
+        description: 'O produto foi atualizado com sucesso.',
+        variant: 'success'
+      });
+    } catch (error) {
+      console.error('Erro ao atualizar produto:', error);
+      toast({
+        title: 'Erro ao atualizar produto',
+        description: 'Não foi possível atualizar o produto.',
+        variant: 'destructive'
       });
     }
   };
 
   const handleDeleteProduct = async (id: string) => {
-    // Verificar sessão ativa
-    const { data: sessionData } = await supabase.auth.getSession();
-    if (!sessionData.session) {
-      toast({
-        title: 'Sessão expirada',
-        description: 'Sua sessão expirou. Por favor, faça login novamente.',
-        variant: 'error'
-      });
-      setTimeout(() => {
-        window.location.href = '/login';
-      }, 2000);
-      return;
-    }
-    
-    if (window.confirm('Tem certeza que deseja excluir este produto?')) {
-      try {
-        await ProductsService.deleteProduct(id);
-        
-      setProducts(products.filter(product => product.id !== id));
-      toast({
-          title: 'Produto excluído',
-          description: 'Produto excluído com sucesso.',
-        variant: 'success'
-      });
-    } catch (error) {
-        console.error('Erro ao excluir produto:', error);
-      toast({
-        title: 'Erro',
-          description: 'Não foi possível excluir o produto.',
-        variant: 'error'
-      });
-      }
-    }
-  };
-
-  const handleDeleteSelectedProducts = async () => {
-    if (selectedProducts.length === 0) {
-      toast({
-        title: 'Aviso',
-        description: 'Nenhum produto selecionado.',
-        variant: 'warning'
-      });
-      return;
-    }
-
-    // Verificar sessão ativa
-    const { data: sessionCheck } = await supabase.auth.getSession();
-    if (!sessionCheck.session) {
-      toast({
-        title: 'Sessão expirada',
-        description: 'Sua sessão expirou. Por favor, faça login novamente.',
-        variant: 'error'
-      });
-      setTimeout(() => {
-        window.location.href = '/login';
-      }, 2000);
-      return;
-    }
-
-    if (window.confirm(`Tem certeza que deseja excluir ${selectedProducts.length} produtos?`)) {
-      try {
-        // Excluir produtos em sequência
-        for (const id of selectedProducts) {
-          await ProductsService.deleteProduct(id);
-        }
-        
-        // Atualizar lista local
-      setProducts(products.filter(product => !selectedProducts.includes(product.id)));
-      setSelectedProducts([]);
-        
-      toast({
-          title: 'Produtos excluídos',
-          description: `${selectedProducts.length} produtos excluídos com sucesso.`,
-        variant: 'success'
-      });
-    } catch (error) {
-        console.error('Erro ao excluir produtos:', error);
-      toast({
-        title: 'Erro',
-          description: 'Ocorreu um erro ao excluir os produtos selecionados.',
-        variant: 'error'
-      });
-      }
-    }
-  };
-
-  const handleEditProduct = (product: Product) => {
-    setEditingProduct({
-      id: product.id,
-      name: product.name,
-      code: product.code,
-      price: product.price,
-      description: product.description || '',
-      image_path: product.image_path || '',
-      ncm: product.ncm || '',
-      unit: product.unit || '',
-      quantity: product.quantity || 0,
-      total_amount: product.total_amount || 0
-    });
-    setIsEditModalOpen(true);
-  };
-
-  const handleSaveEditedProduct = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingProduct) return;
-
     try {
-      const updatedProduct = {
-        ...editingProduct,
-        total_amount: editingProduct.price * (editingProduct.quantity || 0)
-      };
-
-      const { data, error } = await supabase
-        .from('ecommerce_products')
-        .update({
-          name: updatedProduct.name,
-          code: updatedProduct.code,
-          price: updatedProduct.price,
-          description: updatedProduct.description,
-          image_path: updatedProduct.image_path,
-          ncm: updatedProduct.ncm,
-          unit: updatedProduct.unit,
-          quantity: updatedProduct.quantity,
-          total_amount: updatedProduct.total_amount
-        })
-        .eq('id', updatedProduct.id)
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      setProducts(products.map(p => p.id === updatedProduct.id ? mapSupabaseProduct(data as EcommerceProductRow) : p));
-      setEditingProduct(null);
-      setIsEditModalOpen(false);
+      await EcommerceService.deleteProduct(id);
+      setProducts(prev => prev.filter(p => p.id !== id));
       toast({
-        title: 'Sucesso',
-        description: 'Produto atualizado com sucesso!',
-        variant: 'default'
+        title: 'Produto excluído',
+        description: 'O produto foi excluído com sucesso.',
+        variant: 'success'
       });
     } catch (error) {
-      console.error('Erro ao atualizar produto:', error);
+      console.error('Erro ao excluir produto:', error);
       toast({
-        title: 'Erro',
-        description: 'Erro ao atualizar produto. Tente novamente.',
+        title: 'Erro ao excluir produto',
+        description: 'Não foi possível excluir o produto.',
         variant: 'destructive'
       });
     }

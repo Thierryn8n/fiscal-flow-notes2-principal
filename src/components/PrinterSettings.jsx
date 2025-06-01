@@ -1,88 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import printers, { getDefaultPrinter } from '../config/printers';
-import { PrintService } from '../services/LocalPrintService';
+import printers from '../config/printers'; // Mantemos a lista de impressoras disponíveis
 
-const PrinterSettings = () => {
-  const [selectedPrinter, setSelectedPrinter] = useState(getDefaultPrinter().id);
-  const [isConnected, setIsConnected] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [testPrintStatus, setTestPrintStatus] = useState('');
+const PrinterSettings = ({ onSettingsChange, initialSettings }) => {
+  const [fiscalNotePrinter, setFiscalNotePrinter] = useState(initialSettings?.fiscalNotePrinter || '');
+  const [normalPrinter, setNormalPrinter] = useState(initialSettings?.normalPrinter || '');
+  const [availablePrinters, setAvailablePrinters] = useState([]);
 
   useEffect(() => {
-    // Verificar estado inicial da conexão
-    setIsConnected(PrintService.isReady());
-  }, []);
+    // A lista de impressoras vem do config/printers.js
+    setAvailablePrinters(printers.map(p => ({ id: p.id, name: `${p.brand} ${p.name}` })));
+    if (initialSettings) {
+      setFiscalNotePrinter(initialSettings.fiscalNotePrinter || '');
+      setNormalPrinter(initialSettings.normalPrinter || '');
+    }
+  }, [initialSettings]);
 
-  const handlePrinterChange = (e) => {
-    setSelectedPrinter(e.target.value);
+  const handleFiscalPrinterChange = (e) => {
+    const newPrinter = e.target.value;
+    setFiscalNotePrinter(newPrinter);
+    onSettingsChange({ fiscalNotePrinter: newPrinter, normalPrinter });
   };
 
-  const handleConnect = () => {
-    if (isConnected) {
-      // Desconectar
-      if (PrintService.disconnect()) {
-        setIsConnected(false);
-        setErrorMessage('');
-      } else {
-        setErrorMessage(PrintService.getLastError() || 'Erro ao desconectar da impressora');
-      }
-    } else {
-      // Conectar
-      if (PrintService.connect(selectedPrinter)) {
-        setIsConnected(true);
-        setErrorMessage('');
-      } else {
-        setErrorMessage(PrintService.getLastError() || 'Erro ao conectar à impressora');
-      }
-    }
-  };
-
-  const handleTestPrint = () => {
-    if (!isConnected) {
-      setErrorMessage('Impressora não conectada');
-      return;
-    }
-
-    setTestPrintStatus('Imprimindo...');
-    
-    // Dados de exemplo para o teste
-    const testData = {
-      companyName: 'FISCAL FLOW NOTES',
-      address: 'Rua Exemplo, 123 - Centro',
-      cnpj: '12.345.678/0001-99',
-      date: new Date().toLocaleDateString(),
-      time: new Date().toLocaleTimeString(),
-      items: [
-        { qty: 1, name: 'TESTE DE IMPRESSAO', price: 0.00 }
-      ],
-      total: 0.00
-    };
-    
-    if (PrintService.printReceipt(testData)) {
-      setTestPrintStatus('Teste de impressão enviado com sucesso!');
-      setTimeout(() => setTestPrintStatus(''), 3000);
-    } else {
-      setTestPrintStatus('');
-      setErrorMessage(PrintService.getLastError() || 'Erro ao enviar teste de impressão');
-    }
-  };
-
-  const handleOpenDrawer = () => {
-    if (!isConnected) {
-      setErrorMessage('Impressora não conectada');
-      return;
-    }
-
-    if (!PrintService.hasCashDrawer()) {
-      setErrorMessage('Esta impressora não suporta gaveta de dinheiro');
-      return;
-    }
-
-    if (PrintService.openCashDrawer()) {
-      setErrorMessage('');
-    } else {
-      setErrorMessage(PrintService.getLastError() || 'Erro ao abrir gaveta de dinheiro');
-    }
+  const handleNormalPrinterChange = (e) => {
+    const newPrinter = e.target.value;
+    setNormalPrinter(newPrinter);
+    onSettingsChange({ fiscalNotePrinter, normalPrinter: newPrinter });
   };
 
   return (
@@ -96,99 +38,49 @@ const PrinterSettings = () => {
         Configurações de Impressora
       </h2>
 
-      {errorMessage && (
-        <div className="mb-3 sm:mb-4 p-2 sm:p-3 bg-red-100 text-red-700 rounded-lg text-sm">
-          {errorMessage}
-        </div>
-      )}
-
-      {testPrintStatus && (
-        <div className="mb-3 sm:mb-4 p-2 sm:p-3 bg-green-100 text-green-700 rounded-lg text-sm">
-          {testPrintStatus}
-        </div>
-      )}
-
-      <div className="mb-3 sm:mb-4">
-        <label htmlFor="printer" className="block text-sm font-medium text-gray-700 mb-1">
-          Selecione a Impressora
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+        <div>
+          <label htmlFor="fiscal-printer" className="block text-sm font-medium text-gray-700 mb-1">
+            Impressora para Notas Fiscais
         </label>
         <select
-          id="printer"
-          className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-fiscal-green-500 focus:border-fiscal-green-500"
-          value={selectedPrinter}
-          onChange={handlePrinterChange}
-          disabled={isConnected}
-        >
-          {printers.map(printer => (
-            <option key={printer.id} value={printer.id}>
-              {printer.name} ({printer.model})
+            id="fiscal-printer"
+            className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-fiscal-green-500 focus:border-fiscal-green-500"
+            value={fiscalNotePrinter}
+            onChange={handleFiscalPrinterChange}
+          >
+            <option value="">Nenhuma selecionada</option>
+            {availablePrinters.map(printer => (
+              <option key={`fiscal-${printer.id}`} value={printer.id}>
+                {printer.name}
             </option>
           ))}
         </select>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
-        <button
-          onClick={handleConnect}
-          className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg flex items-center justify-center text-sm ${
-            isConnected 
-              ? 'bg-red-500 hover:bg-red-600 text-white' 
-              : 'bg-fiscal-green-500 hover:bg-fiscal-green-600 text-white'
-          }`}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-5 sm:w-5 mr-1.5 sm:mr-2" viewBox="0 0 20 20" fill="currentColor">
-            {isConnected ? (
-              <path fillRule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clipRule="evenodd" />
-            ) : (
-              <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-            )}
-          </svg>
-          {isConnected ? 'Desconectar' : 'Conectar'}
-        </button>
-
-        <button
-          onClick={handleTestPrint}
-          className="px-3 sm:px-4 py-1.5 sm:py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg flex items-center justify-center text-sm"
-          disabled={!isConnected}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-5 sm:w-5 mr-1.5 sm:mr-2" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M5 4v3H4a2 2 0 00-2 2v3a2 2 0 002 2h1v2a2 2 0 002 2h6a2 2 0 002-2v-2h1a2 2 0 002-2V9a2 2 0 00-2-2h-1V4a2 2 0 00-2-2H7a2 2 0 00-2 2zm8 0H7v3h6V4zm0 8H7v4h6v-4z" clipRule="evenodd" />
-          </svg>
-          Teste de Impressão
-        </button>
-
-        <button
-          onClick={handleOpenDrawer}
-          className="px-3 sm:px-4 py-1.5 sm:py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg flex items-center justify-center text-sm"
-          disabled={!isConnected}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-5 sm:w-5 mr-1.5 sm:mr-2" viewBox="0 0 20 20" fill="currentColor">
-            <path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z" />
-            <path fillRule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clipRule="evenodd" />
-          </svg>
-          Abrir Gaveta
-        </button>
-      </div>
-
-      {isConnected && (
-        <div className="mt-4 sm:mt-6 p-3 sm:p-4 bg-gray-50 rounded-lg border border-gray-200">
-          <h3 className="font-medium text-gray-700 mb-2 text-sm sm:text-base">Impressora Conectada:</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <p className="text-xs sm:text-sm text-gray-600">
-              <strong>Modelo:</strong> {PrintService.getCurrentPrinter().brand} {PrintService.getCurrentPrinter().model}
-            </p>
-            <p className="text-xs sm:text-sm text-gray-600">
-              <strong>Tipo:</strong> {PrintService.getCurrentPrinter().type === 'thermal' ? 'Térmica' : 'Jato de Tinta'}
-            </p>
-            <p className="text-xs sm:text-sm text-gray-600">
-              <strong>Largura do Papel:</strong> {PrintService.getCurrentPrinter().paperWidth}mm
-            </p>
-            <p className="text-xs sm:text-sm text-gray-600">
-              <strong>Gaveta:</strong> {PrintService.hasCashDrawer() ? 'Disponível' : 'Não disponível'}
-            </p>
-          </div>
+        <div>
+          <label htmlFor="normal-printer" className="block text-sm font-medium text-gray-700 mb-1">
+            Impressora para Documentos Normais
+          </label>
+          <select
+            id="normal-printer"
+            className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-fiscal-green-500 focus:border-fiscal-green-500"
+            value={normalPrinter}
+            onChange={handleNormalPrinterChange}
+          >
+            <option value="">Nenhuma selecionada</option>
+            {availablePrinters.map(printer => (
+              <option key={`normal-${printer.id}`} value={printer.id}>
+                {printer.name}
+              </option>
+            ))}
+          </select>
         </div>
-      )}
+      </div>
+        <p className="mt-4 text-xs text-gray-500">
+        As impressoras selecionadas aqui serão usadas para impressão automática e manual através do dashboard.
+        A impressão real ocorre através do sistema Fiscal Flow via internet, certifique-se que o aplicativo Fiscal Flow Printer esteja configurado corretamente no computador onde as impressoras estão instaladas.
+      </p>
     </div>
   );
 };

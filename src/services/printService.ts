@@ -1,15 +1,22 @@
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/lib/supabase';
 
-// Tipos para as requisições de impressão
 export interface PrintRequest {
-  id?: string;
+  id: string;
   note_id: string;
   note_data: any;
-  created_at?: string;
-  printed_at?: string;
-  status: 'pending' | 'printed' | 'error';
-  device_id: string;
+  device_id: string | null;
+  print_settings_id: string | null;
+  copies: number | null;
+  status: string;
+  error_message: string | null;
+  printed_at: string | undefined;
   created_by: string;
+  created_at: string;
+  updated_at: string | null;
+}
+
+interface PrintRequestRow extends Omit<PrintRequest, 'printed_at'> {
+  printed_at: string | null;
 }
 
 /**
@@ -19,48 +26,26 @@ export const PrintService = {
   /**
    * Envia uma solicitação para impressão em outro dispositivo
    */
-  async sendPrintRequest(noteId: string, noteData: any, userId: string | null): Promise<PrintRequest | null> {
+  async sendPrintRequest(data: any, copies: number = 1): Promise<void> {
     try {
-      // Verifica se o ID do usuário está definido
-      const safeUserId = userId || localStorage.getItem('default_user_id') || 'guest_user';
-      
-      // Armazena o ID do usuário padrão se não estiver definido
-      if (!userId) {
-        localStorage.setItem('default_user_id', safeUserId);
-      }
-      
-      // Gera um ID único para o dispositivo local se não existir
-      let deviceId = localStorage.getItem('device_id');
-      if (!deviceId) {
-        deviceId = `device_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-        localStorage.setItem('device_id', deviceId);
-      }
-
-      // Cria a solicitação de impressão
-      const printRequest: PrintRequest = {
-        note_id: noteId,
-        note_data: noteData,
+      // Em vez de imprimir diretamente, vamos criar uma solicitação de impressão
+      // que será processada pelo servidor
+      const printRequest = {
+        note_data: data,
+        copies: copies,
         status: 'pending',
-        device_id: deviceId,
-        created_by: safeUserId,
+        created_by: (await supabase.auth.getUser()).data.user?.id
       };
 
-      // Insere na tabela de solicitações de impressão
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('print_requests')
-        .insert(printRequest)
-        .select()
-        .single();
+        .insert([printRequest]);
 
-      if (error) {
-        console.error('Erro ao enviar solicitação de impressão:', error);
-        return null;
-      }
+      if (error) throw error;
 
-      return data;
     } catch (error) {
       console.error('Erro ao enviar solicitação de impressão:', error);
-      return null;
+      throw error;
     }
   },
 
@@ -160,5 +145,127 @@ export const PrintService = {
    */
   getCurrentUserId(): string {
     return localStorage.getItem('default_user_id') || 'guest_user';
+  },
+
+  async getPrintRequests(userId: string): Promise<PrintRequest[]> {
+    const { data, error } = await supabase
+      .from('print_requests')
+      .select('*')
+      .eq('created_by', userId);
+
+    if (error) {
+      throw error;
+    }
+
+    return (data as PrintRequestRow[]).map(request => ({
+      id: request.id,
+      note_id: request.note_id,
+      note_data: request.note_data,
+      device_id: request.device_id,
+      print_settings_id: request.print_settings_id,
+      copies: request.copies,
+      status: request.status,
+      error_message: request.error_message,
+      printed_at: request.printed_at || undefined,
+      created_by: request.created_by,
+      created_at: request.created_at,
+      updated_at: request.updated_at
+    }));
+  },
+
+  async getPrintRequest(id: string): Promise<PrintRequest | null> {
+    const { data, error } = await supabase
+      .from('print_requests')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return null;
+      }
+      throw error;
+    }
+
+    return data ? {
+      id: data.id,
+      note_id: data.note_id,
+      note_data: data.note_data,
+      device_id: data.device_id,
+      print_settings_id: data.print_settings_id,
+      copies: data.copies,
+      status: data.status,
+      error_message: data.error_message,
+      printed_at: data.printed_at || undefined,
+      created_by: data.created_by,
+      created_at: data.created_at,
+      updated_at: data.updated_at
+    } : null;
+  },
+
+  async createPrintRequest(request: Omit<PrintRequest, 'id' | 'created_at' | 'updated_at'>): Promise<PrintRequest> {
+    const { data, error } = await supabase
+      .from('print_requests')
+      .insert([request])
+      .select()
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return {
+      id: data.id,
+      note_id: data.note_id,
+      note_data: data.note_data,
+      device_id: data.device_id,
+      print_settings_id: data.print_settings_id,
+      copies: data.copies,
+      status: data.status,
+      error_message: data.error_message,
+      printed_at: data.printed_at || undefined,
+      created_by: data.created_by,
+      created_at: data.created_at,
+      updated_at: data.updated_at
+    };
+  },
+
+  async updatePrintRequest(id: string, request: Partial<PrintRequest>): Promise<PrintRequest> {
+    const { data, error } = await supabase
+      .from('print_requests')
+      .update(request)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return {
+      id: data.id,
+      note_id: data.note_id,
+      note_data: data.note_data,
+      device_id: data.device_id,
+      print_settings_id: data.print_settings_id,
+      copies: data.copies,
+      status: data.status,
+      error_message: data.error_message,
+      printed_at: data.printed_at || undefined,
+      created_by: data.created_by,
+      created_at: data.created_at,
+      updated_at: data.updated_at
+    };
+  },
+
+  async deletePrintRequest(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('print_requests')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      throw error;
+    }
   }
 }; 

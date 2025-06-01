@@ -6,10 +6,9 @@ import path from "path";
 export default defineConfig({
   server: {
     host: "::",
-    port: 8080,
+    port: 3001,
   },
   plugins: [react()],
-  base: './',
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -18,12 +17,6 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
-    emptyOutDir: true,
-    rollupOptions: {
-      external: ['printer']
-    }
-  },
-  optimizeDeps: {
-    exclude: ['printer']
+    emptyOutDir: true
   }
 });

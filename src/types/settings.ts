@@ -1,51 +1,68 @@
 export interface CompanyData {
-  name?: string;
-  cnpj?: string;
-  address?: string;
-  phone?: string;
-  email?: string;
+  name: string;
   logo?: string;
-  [key: string]: any; // Allow additional properties for JSON compatibility
+  address?: {
+    street?: string;
+    number?: string;
+    city?: string;
+    state?: string;
+    zipCode?: string;
+  };
 }
 
 export interface InstallmentFee {
   installments: number;
   fee: number;
-  [key: string]: any; // Allow additional properties for JSON compatibility
-}
-
-export interface DeliveryRadius {
-  radius: number;
-  fee: number;
-  [key: string]: any; // Allow additional properties for JSON compatibility
 }
 
 export interface DeliverySettings {
-  delivery_radii: DeliveryRadius[];
-  default_delivery_fee?: number;
-  [key: string]: any; // Allow additional properties for JSON compatibility
+  delivery_radii: Array<{
+    radius: number;
+    fee: number;
+  }>;
 }
 
 export interface PrinterSettings {
-  default_printer: string;
+  enabled: boolean;
+  default_printer?: string;
   auto_print: boolean;
-  [key: string]: any; // Allow additional properties for JSON compatibility
+  copies: number;
 }
 
 export interface EcommerceSettings {
   enabled: boolean;
   admin_panel_enabled: boolean;
-  [key: string]: any; // Allow additional properties for JSON compatibility
+  theme?: {
+    primary_color?: string;
+    secondary_color?: string;
+    font_family?: string;
+  };
 }
 
 export interface UserSettings {
-  id?: string;
-  user_id?: string;
+  id: string;
+  user_id: string;
   company_data: CompanyData;
   installment_fees: InstallmentFee[];
   delivery_settings: DeliverySettings;
   printer_settings: PrinterSettings;
-  ecommerce_settings?: EcommerceSettings;
+  ecommerce_settings: EcommerceSettings;
   created_at?: string;
   updated_at?: string;
-} 
+}
+
+export const defaultSettings: UserSettings = {
+  user_id: '',
+  company_data: {
+    name: '',
+  },
+  printer_settings: {
+    enabled: false,
+    auto_print: false,
+    copies: 1,
+  },
+  ecommerce_settings: {
+    enabled: false,
+    admin_panel_enabled: false,
+  },
+}; 

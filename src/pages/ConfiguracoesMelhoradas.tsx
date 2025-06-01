@@ -19,6 +19,19 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { v4 as uuidv4 } from 'uuid';
 
+import {
+  loadSettings as loadSupabaseSettings,
+  saveSettings as saveSupabaseSettings,
+  uploadCompanyLogo as uploadSupabaseCompanyLogo,
+  removeCompanyLogo as removeSupabaseCompanyLogo,
+  UserSettings as SupabaseUserSettings,
+  CompanyData as SupabaseCompanyData,
+  InstallmentFee as SupabaseInstallmentFee,
+  DeliverySettings as SupabaseDeliverySettings,
+  DeliveryRadius as SupabaseDeliveryRadius,
+  PrinterSettings as SupabasePrinterSettings
+} from '@/lib/supabaseSettings';
+
 // Local interface for installment fees (with local ID for UI management)
 interface LocalInstallmentFee {
   id: string;
@@ -160,7 +173,7 @@ const SettingsNew = () => {
 
   return (
     <Layout>
-      <div className="container mx-auto px-4 py-6">
+      <div className="container mx-auto px-4 py-6 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAwIDEwIEwgNDAgMTAgTSAxMCAwIEwgMTAgNDAgTSAwIDIwIEwgNDAgMjAgTSAyMCAwIEwgMjAgNDAgTSAwIDMwIEwgNDAgMzAgTSAzMCAwIEwgMzAgNDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2UyZThmMCIgb3BhY2l0eT0iMC4zIiBzdHJva2Utd2lkdGg9IjEiLz48L3BhdHRlcm4+PC9kZWZzPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InVybCgjZ3JpZCkiLz48L3N2Zz4=')]">
         <div className="space-y-6 pb-10 max-w-3xl mx-auto">
           {/* Cabeçalho */}
           <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
@@ -208,6 +221,42 @@ const SettingsNew = () => {
                     className="w-full px-3 py-2 rounded-lg border-2 border-gray-300"
                   />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">CEP</label>
+                  <input
+                    type="text"
+                    value={companyData.zipCode}
+                    onChange={(e) => setCompanyData({...companyData, zipCode: e.target.value})}
+                    className="w-full px-3 py-2 rounded-lg border-2 border-gray-300"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Endereço</label>
+                  <input
+                    type="text"
+                    value={companyData.address}
+                    onChange={(e) => setCompanyData({...companyData, address: e.target.value})}
+                    className="w-full px-3 py-2 rounded-lg border-2 border-gray-300"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cidade</label>
+                  <input
+                    type="text"
+                    value={companyData.city}
+                    onChange={(e) => setCompanyData({...companyData, city: e.target.value})}
+                    className="w-full px-3 py-2 rounded-lg border-2 border-gray-300"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
+                  <input
+                    type="text"
+                    value={companyData.state}
+                    onChange={(e) => setCompanyData({...companyData, state: e.target.value})}
+                    className="w-full px-3 py-2 rounded-lg border-2 border-gray-300"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -227,57 +276,181 @@ const SettingsNew = () => {
                   <p className="text-sm text-gray-600">Nenhuma taxa configurada.</p>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {installmentFees.map(fee => (
-                    <div key={fee.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <span>{fee.installments}x: {fee.fee}%</span>
-                      <button 
-                        type="button"
-                        onClick={() => handleRemoveFee(fee.id)}
-                        className="text-gray-500 hover:text-red-600 p-1"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
+                installmentFees.map(fee => (
+                  <div key={fee.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <span>{fee.installments}x: {fee.fee}%</span>
+                    <button 
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleRemoveFee(fee.id);
+                      }} 
+                      className="text-gray-500 hover:text-red-600 p-1"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ))
               )}
               
-              {/* Formulário para adicionar nova taxa */}
-              <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                <div className="flex items-center space-x-4">
+              {/* Formulário para adicionar/atualizar taxa */}
+              <div className="pt-4 space-y-3 border-t border-gray-200">
+                <p className="text-sm font-medium">Adicionar/Atualizar Taxa</p>
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Parcelas</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Parcelas</label>
                     <input
                       type="number"
-                      min="2"
                       value={newInstallment}
-                      onChange={(e) => setNewInstallment(parseInt(e.target.value))}
-                      className="w-24 px-3 py-2 rounded-lg border-2 border-gray-300"
+                      onChange={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setNewInstallment(parseInt(e.target.value) || 2);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }
+                      }}
+                      min="2"
+                      className="w-full px-3 py-2 rounded-lg border-2 border-gray-300"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Taxa (%)</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Taxa (%)</label>
                     <input
                       type="number"
-                      step="0.01"
-                      min="0"
                       value={newFee}
-                      onChange={(e) => setNewFee(parseFloat(e.target.value))}
-                      className="w-24 px-3 py-2 rounded-lg border-2 border-gray-300"
+                      onChange={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setNewFee(parseFloat(e.target.value) || 0);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }
+                      }}
+                      min="0"
+                      step="0.1"
+                      className="w-full px-3 py-2 rounded-lg border-2 border-gray-300"
                     />
-                  </div>
-                  <div className="flex items-end">
-                    <Button
-                      type="button"
-                      onClick={handleAddInstallment}
-                      className="bg-green-600 hover:bg-green-700 h-10"
-                    >
-                      <Plus size={18} className="mr-2" />
-                      Adicionar Taxa
-                    </Button>
                   </div>
                 </div>
+                <button 
+                  type="button"
+                  onClick={handleAddInstallment}
+                  className="w-full flex items-center justify-center bg-white border-2 border-green-500 text-green-700 font-medium py-2 rounded-xl cursor-pointer"
+                >
+                  <Plus size={18} className="mr-1.5" /> 
+                  Adicionar/Atualizar Taxa
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          {/* Configurações de Entrega */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="bg-gradient-to-r from-gray-50 to-gray-100 p-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold flex items-center">
+                <Truck size={20} className="mr-3 text-green-600" />
+                Configurações de Entrega
+              </h2>
+            </div>
+            <div className="p-4 space-y-4">
+              {/* Lista de raios existentes */}
+              {deliveryRadiuses.length === 0 ? (
+                <div className="text-center p-4 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-600">Nenhum raio de entrega configurado.</p>
+                </div>
+              ) : (
+                deliveryRadiuses.map(radius => (
+                  <div key={radius.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center">
+                      <span style={{ backgroundColor: radius.color }} className="w-3 h-3 rounded-full mr-2"></span>
+                      <span>{radius.radius}km: R${radius.price.toFixed(2)}</span>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleRemoveRadius(radius.id);
+                      }}
+                      className="text-gray-500 hover:text-red-600 p-1"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ))
+              )}
+              
+              {/* Formulário para adicionar/atualizar raio */}
+              <div className="pt-4 space-y-3 border-t border-gray-200">
+                <p className="text-sm font-medium">Adicionar/Atualizar Raio de Entrega</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Raio (km)</label>
+                    <input
+                      type="number"
+                      value={newRadius}
+                      onChange={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setNewRadius(parseInt(e.target.value) || 2);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }
+                      }}
+                      min="1"
+                      className="w-full px-3 py-2 rounded-lg border-2 border-gray-300"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Preço (R$)</label>
+                    <input
+                      type="number"
+                      value={newPrice}
+                      onChange={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setNewPrice(parseFloat(e.target.value) || 0);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }
+                      }}
+                      min="0"
+                      step="0.1"
+                      className="w-full px-3 py-2 rounded-lg border-2 border-gray-300"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Cor</label>
+                  <input
+                    type="color"
+                    value={selectedColor}
+                    onChange={(e) => setSelectedColor(e.target.value)}
+                    className="w-full h-10 p-1 rounded-lg border-2 border-gray-300"
+                  />
+                </div>
+                <button 
+                  type="button"
+                  onClick={handleAddRadius}
+                  className="w-full flex items-center justify-center bg-white border-2 border-green-500 text-green-700 font-medium py-2 rounded-xl cursor-pointer"
+                >
+                  <Plus size={18} className="mr-1.5" /> 
+                  Adicionar/Atualizar Raio
+                </button>
               </div>
             </div>
           </div>
