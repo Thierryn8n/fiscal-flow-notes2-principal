@@ -7,18 +7,6 @@ import { useToast } from '@/hooks/use-toast';
 import { SettingsService } from '@/services/settings.service';
 import { EcommerceSettings } from '@/types/settings';
 import { AuthError } from '@supabase/supabase-js';
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
-  SidebarProvider,
-  SidebarTrigger,
-  SidebarInset,
-} from '@/components/ui/sidebar';
 
 interface LayoutProps {
   children: ReactNode;
