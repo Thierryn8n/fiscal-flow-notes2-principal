@@ -1,6 +1,6 @@
 import React, { ReactNode, useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Home, FileText, Printer, LogOut, Menu, ChevronLeft, ChevronRight, Settings, Users, BarChart, Package, Download, X, UserCog, ShoppingBag, ShoppingCart, Store, LayoutDashboard } from 'lucide-react';
+import { Home, FileText, Printer, LogOut, Menu, ChevronLeft, ChevronRight, Settings, Users, BarChart, Package, X, UserCog, ShoppingBag, ShoppingCart, Store, LayoutDashboard } from 'lucide-react';
 import Logo from './ui/Logo';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
