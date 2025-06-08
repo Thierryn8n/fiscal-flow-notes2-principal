@@ -4,8 +4,13 @@ import type { Database } from './types';
 
 const SUPABASE_URL = "https://bbqtnkqjvhzhxdmjmqtt.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJicXRua3Fqdmh6aHhkbWptcXR0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNTIxMzAsImV4cCI6MjA2MTYyODEzMH0.ZD5Trt2HL3ZlGvNgNReP8C5IU9c7zQ3O__-gYlnKgdU";
+const SUPABASE_SERVICE_KEY = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_KEY || SUPABASE_PUBLISHABLE_KEY;
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
+export const createServiceClient = () => {
+  return createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+};
