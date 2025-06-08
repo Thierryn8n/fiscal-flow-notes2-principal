@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/components/ui/use-toast';
 import { Printer, FileText, Clock, CheckCircle2, AlertCircle, Trash2, Info } from 'lucide-react';
-import PrinterSettings from './PrinterSettings';
+import { PrinterSettings } from './PrinterSettings';
 import { printDocument, getPrinterStatus } from '@/integrations/printer/printer-bridge';
 import { PrintRequest } from '../types/print-request';
 import { Progress } from '@/components/ui/progress';
