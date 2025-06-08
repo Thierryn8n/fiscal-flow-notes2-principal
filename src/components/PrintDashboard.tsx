@@ -12,7 +12,6 @@ import PrinterSettings from './PrinterSettings';
 import { printDocument, getPrinterStatus } from '@/integrations/printer/printer-bridge';
 import { PrintRequest } from '../types/print-request';
 import { Progress } from '@/components/ui/progress';
-import { PrintService } from '@/services/printService';
 
 interface ApiError extends Error {
   message: string;
