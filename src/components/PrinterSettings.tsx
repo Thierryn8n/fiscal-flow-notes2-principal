@@ -16,7 +16,7 @@ interface PrinterConfiguration {
   normalPrinter: string;
 }
 
-export function PrinterSettings({ onSettingsChange }: PrinterSettingsProps) {
+const PrinterSettings = ({ onSettingsChange }: PrinterSettingsProps) => {
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
   const [fiscalNotePrinter, setFiscalNotePrinter] = useState<string>('none');
   const [normalPrinter, setNormalPrinter] = useState<string>('none');
@@ -173,4 +173,6 @@ export function PrinterSettings({ onSettingsChange }: PrinterSettingsProps) {
       </CardContent>
     </Card>
   );
-}
+};
+
+export default PrinterSettings;
