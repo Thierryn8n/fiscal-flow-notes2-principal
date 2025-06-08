@@ -9,7 +9,7 @@ type NoteUpdate = Tables['fiscal_notes']['Update'];
 type Json = Database['public']['Tables']['fiscal_notes']['Row']['note_data'];
 
 // Tipos locais
-export type NoteStatus = 'draft' | 'pending' | 'finalized' | 'cancelled';
+export type NoteStatus = 'draft' | 'pending' | 'finalized' | 'cancelled' | 'printed';
 
 export interface CustomerAddress {
   street: string;
@@ -46,12 +46,20 @@ export interface PaymentData {
 }
 
 // Interface principal da nota fiscal
-export interface FiscalNote extends Omit<NoteRow, 'note_data' | 'payment_data'> {
+export interface FiscalNote {
+  id: string;
+  note_number: string;
   note_data: {
     customer: CustomerData;
     products: NoteProduct[];
   };
   payment_data: PaymentData;
+  total_value: number;
+  status: NoteStatus;
+  owner_id: string;
+  printed_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 // Interface para filtros de busca
@@ -72,18 +80,15 @@ export class NotesService {
   private static toSnakeCase(note: FiscalNote): NoteInsert {
     return {
       id: note.id,
-      note_number: note.noteNumber,
-      date: note.date,
-      customer_data: note.customerData as Json,
-      products: note.products as unknown as Json,
-      payment_data: note.paymentData as Json,
-      total_value: note.totalValue,
+      note_number: note.note_number,
+      note_data: note.note_data as unknown as Json,
+      payment_data: note.payment_data as unknown as Json,
+      total_value: note.total_value,
       status: note.status,
-      owner_id: note.ownerId,
-      printed_at: note.printedAt || null,
-      created_at: note.createdAt || null,
-      updated_at: note.updatedAt || null,
-      note_data: {}
+      owner_id: note.owner_id,
+      printed_at: note.printed_at || null,
+      created_at: note.created_at || null,
+      updated_at: note.updated_at || null
     };
   }
 
@@ -93,17 +98,15 @@ export class NotesService {
   private static toCamelCase(data: NoteRow): FiscalNote {
     return {
       id: data.id,
-      noteNumber: data.note_number,
-      date: data.date,
-      customerData: data.customer_data as CustomerData,
-      products: data.products as unknown as NoteProduct[],
-      paymentData: data.payment_data as PaymentData,
-      totalValue: data.total_value,
+      note_number: data.note_number,
+      note_data: data.note_data as unknown as { customer: CustomerData; products: NoteProduct[] },
+      payment_data: data.payment_data as unknown as PaymentData,
+      total_value: data.total_value,
       status: data.status as NoteStatus,
-      ownerId: data.owner_id,
-      printedAt: data.printed_at || undefined,
-      createdAt: data.created_at || undefined,
-      updatedAt: data.updated_at || undefined
+      owner_id: data.owner_id,
+      printed_at: data.printed_at,
+      created_at: data.created_at,
+      updated_at: data.updated_at
     };
   }
 
@@ -112,9 +115,7 @@ export class NotesService {
    */
   static async saveNote(note: FiscalNote): Promise<FiscalNote | null> {
     try {
-      // Verificar se a nota já existe (tem ID)
       if (note.id) {
-        // Atualizar nota existente
         const noteData = this.toSnakeCase(note);
         console.log('Atualizando nota existente:', noteData);
         
@@ -125,7 +126,7 @@ export class NotesService {
             updated_at: new Date().toISOString()
           })
           .eq('id', note.id)
-          .eq('owner_id', note.ownerId)
+          .eq('owner_id', note.owner_id)
           .select('*')
           .single();
 
@@ -134,20 +135,11 @@ export class NotesService {
           throw error;
         }
         
-        const updatedNote = data ? this.toCamelCase(data) : null;
-        
-        // Gerar miniatura da nota atualizada
-        if (updatedNote) {
-          await ThumbnailService.saveThumbnail(updatedNote);
-        }
-        
-        return updatedNote;
+        return data ? this.toCamelCase(data) : null;
       } else {
-        // Inserir nova nota
         const noteData = this.toSnakeCase(note);
         console.log('Inserindo nova nota:', noteData);
         
-        // Se for nova nota, não enviar ID
         delete noteData.id;
         
         const { data, error } = await supabase
@@ -165,18 +157,11 @@ export class NotesService {
           throw error;
         }
         
-        const newNote = data ? this.toCamelCase(data) : null;
-        
-        // Gerar miniatura da nova nota
-        if (newNote) {
-          await ThumbnailService.saveThumbnail(newNote);
-        }
-        
-        return newNote;
+        return data ? this.toCamelCase(data) : null;
       }
     } catch (error) {
       console.error('Erro ao salvar nota fiscal:', error);
-      throw error; // Propagar o erro para obter mais detalhes
+      throw error;
     }
   }
 
@@ -266,10 +251,9 @@ export class NotesService {
         .eq('id', id)
         .eq('owner_id', ownerId);
 
-      if (error) throw error;
-      return true;
+      return !error;
     } catch (error) {
-      console.error('Erro ao excluir nota:', error);
+      console.error('Erro ao deletar nota:', error);
       return false;
     }
   }
@@ -399,14 +383,5 @@ export class NotesService {
     if (!data) throw new Error('Erro ao atualizar nota fiscal');
 
     return data as FiscalNote;
-  }
-
-  static async deleteNote(id: string): Promise<void> {
-    const { error } = await supabase
-      .from(this.TABLE_NAME)
-      .delete()
-      .eq('id', id);
-
-    if (error) throw error;
   }
 }

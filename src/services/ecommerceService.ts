@@ -1,9 +1,7 @@
 import { Database } from '@/types/supabase';
 import { supabase } from '@/lib/supabase';
+import { supabasePublic } from '@/integrations/supabase/publicClient';
 import { v4 as uuidv4 } from 'uuid';
-import { supabasePublic, getPublicProducts, getPublicCategories, getPublicStoreSettings } from '@/integrations/supabase/publicClient';
-import type { Database as SupabaseDatabase } from '@/types/supabase';
-import { EcommerceProduct, CartItem, Category, StoreInfo, OrderKanban, DashboardOverviewData } from '@/types/ecommerce';
 
 /**
  * IMPORTANTE: Páginas públicas como Ecommerce, Carrinho e Checkout NÃO requerem autenticação.
@@ -113,6 +111,34 @@ export interface DashboardOverviewData {
   recent_orders: OrderKanban[];
 }
 
+export interface NewCustomerData {
+  name: string;
+  email?: string;
+  phone?: string;
+  address?: {
+    street?: string;
+    number?: string;
+    neighborhood?: string;
+    city?: string;
+    state?: string;
+    zipCode?: string;
+  };
+  owner_id: string;
+}
+
+export interface NewOrderKanbanData {
+  customer_id: string;
+  customer_name: string;
+  product_id: string;
+  product_name: string;
+  seller_id: string;
+  seller_name: string;
+  status: OrderStatus;
+  notes?: string;
+  total_amount?: number;
+  owner_id: string;
+}
+
 export class EcommerceService {
   private static readonly PRODUCTS_TABLE = 'ecommerce_products' as const;
   private static readonly CATEGORIES_TABLE = 'ecommerce_categories' as const;
@@ -196,9 +222,16 @@ export class EcommerceService {
 
       if (error) throw error;
 
-      return (data || []).map(mapSupabaseCategory);
+      return (data || []).map((category) => ({
+        id: category.id,
+        name: category.name,
+        description: category.description,
+        icon: category.icon,
+        created_at: category.created_at,
+        updated_at: category.updated_at
+      }));
     } catch (error) {
-      console.error('Error fetching categories:', error);
+      console.error('Erro ao buscar categorias:', error);
       return [];
     }
   }
@@ -314,7 +347,7 @@ export class EcommerceService {
 
     if (existingItemIndex >= 0) {
       cart[existingItemIndex].quantity += quantity;
-      cart[existingItemIndex].subtotal = cart[existingItemIndex].price * cart[existingItemIndex].quantity;
+      cart[existingItemIndex].total_amount = cart[existingItemIndex].price * cart[existingItemIndex].quantity;
       return [...cart];
     }
 
@@ -322,9 +355,9 @@ export class EcommerceService {
       id: product.id,
       name: product.name,
       price: product.price,
-      quantity: quantity,
-      unit: product.unit,
-      subtotal: product.price * quantity,
+      quantity,
+      unit: product.unit || undefined,
+      total_amount: product.price * quantity
     };
 
     return [...cart, newItem];
@@ -340,7 +373,7 @@ export class EcommerceService {
           return {
             ...item,
             quantity: newQuantity,
-            subtotal: item.price * newQuantity
+            total_amount: item.price * newQuantity
           };
         }
         return item;
@@ -418,18 +451,24 @@ export class EcommerceService {
 
   // Funções para Product Reviews
   static async getProductReviews(productId: string): Promise<ProductReview[]> {
-    try {
-      const { data, error } = await supabase
-        .from('product_reviews')
-        .select('*')
-        .eq('product_id', productId);
+    const { data, error } = await supabase
+      .from('product_reviews')
+      .select('*')
+      .eq('product_id', productId);
 
-      if (error) throw error;
-      return (data || []).map(mapSupabaseReview);
-    } catch (error) {
-      console.error('Error fetching product reviews:', error);
-      return [];
-    }
+    if (error) throw error;
+    if (!data) return [];
+
+    return data.map(review => ({
+      id: review.id,
+      product_id: review.product_id,
+      user_id: review.user_id,
+      author_name: review.author_name,
+      rating: review.rating,
+      comment: review.comment,
+      created_at: review.created_at,
+      updated_at: review.updated_at
+    }));
   }
 
   static async addProductReview(review: Omit<ProductReview, 'id' | 'created_at' | 'updated_at'>): Promise<ProductReview | null> {
@@ -441,7 +480,16 @@ export class EcommerceService {
         .single();
 
       if (error) throw error;
-      return data ? mapSupabaseReview(data) : null;
+      return data ? {
+        id: data.id,
+        product_id: data.product_id,
+        user_id: data.user_id,
+        author_name: data.author_name,
+        rating: data.rating,
+        comment: data.comment,
+        created_at: data.created_at,
+        updated_at: data.updated_at
+      } : null;
     } catch (error) {
       console.error('Error adding product review:', error);
       return null;
@@ -491,19 +539,19 @@ export class EcommerceService {
   }
 
   // Criar novo cliente (sem autenticação)
-  static async createCustomer(customerData: NewCustomerData): Promise<any> {
+  static async createCustomer(customerData: NewCustomerData): Promise<Customer | null> {
     try {
       const { data, error } = await supabase
         .from('customers')
-        .insert([customerData])
+        .insert(customerData)
         .select()
         .single();
 
       if (error) throw error;
       return data;
     } catch (error) {
-        console.error('Erro ao criar cliente:', error);
-        throw error;
+      console.error('Erro ao criar cliente:', error);
+      return null;
     }
   }
 
@@ -512,19 +560,19 @@ export class EcommerceService {
     try {
       const { data, error } = await supabase
         .from('orders_kanban')
-        .insert([{
+        .insert({
           ...orderData,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
-        }])
+        })
         .select('id')
         .single();
 
       if (error) throw error;
       return data?.id || null;
     } catch (error) {
-      console.error('Erro ao criar pedido no Kanban:', error);
-      throw error;
+      console.error('Erro ao criar pedido:', error);
+      return null;
     }
   }
 
@@ -532,13 +580,13 @@ export class EcommerceService {
     const { data, error } = await supabase
       .from(this.ORDERS_TABLE)
       .select('*')
-      .eq('owner_id', ownerId);
+      .eq('owner_id', ownerId)
+      .order('created_at', { ascending: false });
 
-    if (error) {
-      throw error;
-    }
+    if (error) throw error;
+    if (!data) return [];
 
-    return (data as OrderKanbanRow[]).map(order => ({
+    return data.map(order => ({
       id: order.id,
       customer_id: order.customer_id,
       customer_name: order.customer_name,
@@ -547,11 +595,11 @@ export class EcommerceService {
       seller_id: order.seller_id,
       seller_name: order.seller_name,
       status: order.status,
-      notes: order.notes || undefined,
-      total_amount: order.total_amount || undefined,
+      notes: order.notes,
+      total_amount: order.total_amount,
       owner_id: order.owner_id,
-      created_at: order.created_at || undefined,
-      updated_at: order.updated_at || undefined
+      created_at: order.created_at,
+      updated_at: order.updated_at
     }));
   }
 

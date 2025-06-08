@@ -52,9 +52,14 @@ export interface UserSettings {
 }
 
 export const defaultSettings: UserSettings = {
+  id: '',
   user_id: '',
   company_data: {
     name: '',
+  },
+  installment_fees: [],
+  delivery_settings: {
+    delivery_radii: []
   },
   printer_settings: {
     enabled: false,
@@ -65,4 +70,6 @@ export const defaultSettings: UserSettings = {
     enabled: false,
     admin_panel_enabled: false,
   },
+  created_at: undefined,
+  updated_at: undefined
 }; 

@@ -413,7 +413,7 @@ const SellersManagement: React.FC = () => {
   // Função para adicionar novo vendedor no Supabase
   const handleCreateSeller = async () => {
     try {
-      setIsSubmitting(true);
+    setIsSubmitting(true);
 
       if (!user) {
         toast({
@@ -440,7 +440,7 @@ const SellersManagement: React.FC = () => {
         .from('sellers')
         .insert([sellerData])
         .select();
-
+        
       if (error) {
         toast({
           title: 'Erro ao criar vendedor',
@@ -449,16 +449,16 @@ const SellersManagement: React.FC = () => {
         });
         return;
       }
-
+      
       if (data && data[0]) {
         setSellers(prev => [...prev, data[0]]);
-        toast({
+      toast({
           title: 'Sucesso',
           description: 'Vendedor criado com sucesso!',
           variant: 'default',
-        });
+      });
         resetForm();
-        setIsDialogOpen(false);
+      setIsDialogOpen(false);
       }
     } catch (error) {
       toast({
@@ -476,21 +476,21 @@ const SellersManagement: React.FC = () => {
     try {
       setIsSubmitting(true);
 
-      if (!editingSellerId || !user) {
-        toast({
-          title: 'Erro',
+    if (!editingSellerId || !user) {
+      toast({
+        title: 'Erro',
           description: 'Dados inválidos',
           variant: 'destructive',
-        });
-        return;
-      }
+      });
+      return;
+    }
 
       const updatedSeller = {
-        full_name: newSeller.full_name,
-        phone: newSeller.phone,
-        email: newSeller.email || null,
+          full_name: newSeller.full_name,
+          phone: newSeller.phone,
+          email: newSeller.email || null,
         image_path: newSeller.image_path || null,
-        active: newSeller.active || true,
+          active: newSeller.active || true,
         updated_at: new Date().toISOString()
       };
 
