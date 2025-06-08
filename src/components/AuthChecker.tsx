@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
-import { toast } from '@/hooks/use-toast';
+import { useToast } from '@/hooks/use-toast';
 
 // Páginas públicas que não precisam de autenticação
 const PUBLIC_PAGES = [
@@ -30,6 +30,7 @@ const AuthChecker = () => {
   const { user, loading, forceRefreshAuthContext, refreshSession } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [showRecoveryUI, setShowRecoveryUI] = useState(false);
   const [isRecovering, setIsRecovering] = useState(false);
   const [verificationCount, setVerificationCount] = useState(0);
