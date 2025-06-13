@@ -52,7 +52,7 @@ export const checkAuthAndRLS = async () => {
       
       // Tentar uma consulta alternativa para diagnóstico
       console.log('Tentando consulta alternativa para diagnóstico...');
-      const { data: altData, error: altError } = await supabase
+      const { error: altError } = await supabase
         .from('products')
         .select('count')
         .limit(1);

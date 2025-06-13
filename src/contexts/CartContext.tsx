@@ -9,9 +9,16 @@ export interface CartItem {
   imageUrl?: string;
 }
 
+export interface EcommerceProduct {
+  id: string;
+  name: string;
+  price: number;
+  imageUrl?: string;
+}
+
 interface CartContextData {
   cartItems: CartItem[];
-  addToCart: (item: CartItem) => void;
+  addToCart: (item: CartItem | EcommerceProduct, quantity?: number) => void;
   removeFromCart: (itemId: string) => void;
   updateCartItemQuantity: (itemId: string, quantity: number) => void;
   clearCart: () => void;
@@ -48,19 +55,27 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [cartItems]);
 
   // Adiciona um item ao carrinho
-  const addToCart = (newItem: CartItem) => {
+  const addToCart = (newItem: CartItem | EcommerceProduct, quantity: number = 1) => {
     setCartItems(currentItems => {
-      const existingItemIndex = currentItems.findIndex(item => item.id === newItem.id);
+      const cartItem: CartItem = {
+        id: newItem.id,
+        name: newItem.name,
+        price: newItem.price,
+        quantity: quantity,
+        imageUrl: 'imageUrl' in newItem ? newItem.imageUrl : undefined
+      };
+
+      const existingItemIndex = currentItems.findIndex(item => item.id === cartItem.id);
 
       if (existingItemIndex >= 0) {
         // Se o item já existe, atualiza a quantidade
         const updatedItems = [...currentItems];
-        updatedItems[existingItemIndex].quantity += newItem.quantity;
+        updatedItems[existingItemIndex].quantity += quantity;
         return updatedItems;
       }
 
       // Se o item não existe, adiciona ao carrinho
-      return [...currentItems, newItem];
+      return [...currentItems, cartItem];
     });
   };
 

@@ -1,17 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { CustomersService } from '@/services/customersService';
-import { Customer, CustomerFilters, PaginatedResponse } from '@/types/Customer';
 import { useAuth } from '@/contexts/AuthContext';
-import { 
-  UserRound, Phone, MapPin, Search, 
-  Trash2, PencilLine, ChevronLeft, ChevronRight, 
-  Filter, X, Info, AlertCircle, Plus, UserPlus, Check
-} from 'lucide-react';
+import { Customer, CustomerFilters, CustomerAddress } from '@/types/Customer';
+import { CustomersService } from '@/services/customersService';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Filter, X, Plus, UserPlus, Check, Mail } from 'lucide-react';
 import CustomerForm, { CustomerData } from '@/components/fiscal/CustomerForm';
 import * as Dialog from '@radix-ui/react-dialog';
-import * as Tabs from '@radix-ui/react-tabs';
-import Layout from '@/components/Layout';
+import { Layout } from '@/components/Layout';
+import { Json } from '@/types/supabase';
+import { 
+  UserRound, Phone, MapPin, Search, 
+  Trash2, PencilLine, ChevronLeft, ChevronRight
+} from 'lucide-react';
 
 const ITEMS_PER_PAGE = 10;
 
@@ -51,13 +56,13 @@ const CustomersManagement: React.FC = () => {
         searchTerm: searchTerm
       };
       
-      const result: PaginatedResponse<Customer> = await CustomersService.getCustomers(filters);
+      const { customers, count } = await CustomersService.getCustomers(filters.page || 1, filters.pageSize || 10, filters.searchTerm || '');
       
-      setCustomers(result.data);
+      setCustomers(customers);
       setPagination({
         ...pagination,
-        totalPages: result.totalPages,
-        totalCount: result.count
+        totalPages: Math.ceil(count / pagination.pageSize),
+        totalCount: count
       });
     } catch (error) {
       console.error('Erro ao carregar clientes:', error);
@@ -159,8 +164,7 @@ const CustomersManagement: React.FC = () => {
         ...editingCustomer,
         name: data.name,
         phone: data.phone,
-        address: data.address,
-        signature: data.signature
+        address: data.address
       });
     }
   };
@@ -170,7 +174,13 @@ const CustomersManagement: React.FC = () => {
     if (!editingCustomer) return;
     
     try {
-      const updatedCustomer = await CustomersService.saveCustomer(editingCustomer);
+      const customerData: CustomerData = {
+        name: editingCustomer.name,
+        phone: editingCustomer.phone,
+        address: editingCustomer.address
+      };
+      
+      const updatedCustomer = await CustomersService.saveCustomer(customerData);
       
       toast({
         title: 'Cliente atualizado',
@@ -217,55 +227,97 @@ const CustomersManagement: React.FC = () => {
     }, 0);
   };
   
+  // Função para renderizar o endereço do cliente na lista
+  const renderCustomerAddress = (customer: Customer) => {
+    const address = customer.address;
+    if (!address?.city) return <span className="text-sm text-gray-400">Não informado</span>;
+
+    return (
+      <div className="flex items-center text-sm text-gray-500">
+        <MapPin size={14} className="mr-1 text-gray-400" />
+        {address.city}
+        {address.state && `, ${address.state}`}
+      </div>
+    );
+  };
+  
   // Componente para renderizar os detalhes do cliente
   const CustomerDetails = ({ customer }: { customer: Customer }) => {
+    const address = customer.address;
+    
     return (
       <div className="p-6 bg-white rounded-xl shadow-sm border border-gray-200">
-        <div className="mb-4 pb-4 border-b border-gray-100">
-          <h3 className="text-2xl font-medium text-gray-800">{customer.name}</h3>
-          <div className="flex items-center mt-2 text-gray-600">
-            <Phone size={16} className="mr-2" />
-            <span>{customer.phone}</span>
+        <div className="flex flex-col space-y-4">
+          <div className="flex items-center space-x-2">
+            <UserRound className="text-gray-500" />
+            <h3 className="text-lg font-medium">{customer.name}</h3>
           </div>
+
+          <div className="flex items-center space-x-2">
+            <Phone className="text-gray-500" />
+            <p>{customer.phone}</p>
         </div>
         
-        {customer.address && (
-          <div className="mb-4">
-            <h4 className="font-medium text-gray-700 mb-2 flex items-center">
-              <MapPin size={16} className="mr-2" />
-              Endereço
-            </h4>
-            <div className="bg-gray-50 p-3 rounded-lg">
-              {customer.address.street && customer.address.number && (
-                <p>{customer.address.street}, {customer.address.number}</p>
-              )}
-              {customer.address.neighborhood && <p>{customer.address.neighborhood}</p>}
-              {customer.address.city && customer.address.state && (
-                <p>{customer.address.city} - {customer.address.state}</p>
-              )}
-              {customer.address.zipCode && <p>CEP: {customer.address.zipCode}</p>}
-            </div>
+          {customer.email && (
+            <div className="flex items-center space-x-2">
+              <Mail className="text-gray-500" />
+              <p>{customer.email}</p>
           </div>
         )}
         
-        {customer.signature && (
+          {address && (
+            <div className="flex items-start space-x-2">
+              <MapPin className="text-gray-500 mt-1" />
           <div>
-            <h4 className="font-medium text-gray-700 mb-2">Assinatura</h4>
-            <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
-              <img src={customer.signature} alt="Assinatura do cliente" className="max-w-full h-auto" />
+                <p>{address.street}, {address.number}</p>
+                {address.complement && <p>{address.complement}</p>}
+                <p>{address.neighborhood}</p>
+                <p>{address.city} - {address.state}</p>
+                <p>{address.zipCode}</p>
+              </div>
             </div>
+          )}
           </div>
-        )}
         
         <div className="mt-6 text-sm text-gray-500">
-          <p>Cliente desde: {new Date(customer.createdAt || Date.now()).toLocaleDateString()}</p>
-          {customer.updatedAt && (
-            <p>Última atualização: {new Date(customer.updatedAt).toLocaleDateString()}</p>
+          <p>Cliente desde: {new Date(customer.created_at || Date.now()).toLocaleDateString()}</p>
+          {customer.updated_at && (
+            <p>Última atualização: {new Date(customer.updated_at).toLocaleDateString()}</p>
           )}
         </div>
       </div>
     );
   };
+  
+  // Função para mapear um Customer para CustomerData
+  const mapCustomerToData = (customer: Customer): CustomerData => {
+    const defaultAddress: CustomerAddress = {
+      street: '',
+      number: '',
+      neighborhood: '',
+      city: '',
+      state: '',
+      zipCode: '',
+    };
+
+    return {
+      id: customer.id,
+      name: customer.name,
+      email: customer.email || '',
+      phone: customer.phone,
+      address: customer.address || defaultAddress,
+      owner_id: customer.owner_id
+    };
+  };
+
+  // Função para mapear CustomerData para Customer
+  const mapDataToCustomer = (data: CustomerData): Omit<Customer, 'id' | 'created_at' | 'updated_at' | 'signature'> => ({
+    name: data.name,
+    email: data.email || null,
+    phone: data.phone,
+    address: data.address,
+    owner_id: data.owner_id || ''
+  });
   
   const content = (
     <div className="container mx-auto px-4 py-6 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAwIDEwIEwgNDAgMTAgTSAxMCAwIEwgMTAgNDAgTSAwIDIwIEwgNDAgMjAgTSAyMCAwIEwgMjAgNDAgTSAwIDMwIEwgNDAgMzAgTSAzMCAwIEwgMzAgNDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2UyZThmMCIgb3BhY2l0eT0iMC4zIiBzdHJva2Utd2lkdGg9IjEiLz48L3BhdHRlcm4+PC9kZWZzPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InVybCgjZ3JpZCkiLz48L3N2Zz4=')]">
@@ -305,17 +357,14 @@ const CustomersManagement: React.FC = () => {
               
                 <div className="p-4 sm:p-6">
                 <CustomerForm 
-                  onCustomerDataChange={() => {}}
-                  onSaveRef={(saveMethod) => {
-                    // Ao salvar, atualiza a lista e fecha o modal
-                    const originalSave = saveMethod;
-                    return async () => {
-                      await originalSave();
+                  onCustomerSelect={(customer) => {
                       loadCustomers();
                       document.querySelector('[aria-label="Close"]')?.dispatchEvent(
                         new MouseEvent('click', { bubbles: true })
                       );
-                    };
+                  }}
+                  onSave={(customer) => {
+                    loadCustomers();
                   }}
                 />
               </div>
@@ -451,17 +500,11 @@ const CustomersManagement: React.FC = () => {
                     </div>
                   </div>
                   
-                  {customer.address?.city && (
-                    <div className="mt-2 text-sm text-gray-500 flex items-center">
-                      <MapPin size={14} className="mr-1 text-gray-400" />
-                      {customer.address.city}
-                      {customer.address.state && `, ${customer.address.state}`}
-                    </div>
-                  )}
+                  {renderCustomerAddress(customer)}
                   
-                  {customer.createdAt && (
+                  {customer.created_at && (
                     <div className="mt-1 text-xs text-gray-400">
-                      Cadastrado em: {new Date(customer.createdAt).toLocaleDateString()}
+                      Cadastrado em: {new Date(customer.created_at).toLocaleDateString()}
                     </div>
                   )}
                 </div>
@@ -519,18 +562,10 @@ const CustomersManagement: React.FC = () => {
                         <div className="text-sm text-gray-900">{customer.phone}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        {customer.address?.city ? (
-                          <div className="flex items-center text-sm text-gray-500">
-                            <MapPin size={14} className="mr-1 text-gray-400" />
-                            {customer.address.city}
-                            {customer.address.state && `, ${customer.address.state}`}
-                          </div>
-                        ) : (
-                          <span className="text-sm text-gray-400">Não informado</span>
-                        )}
+                        {renderCustomerAddress(customer)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {customer.createdAt ? new Date(customer.createdAt).toLocaleDateString() : '-'}
+                        {customer.created_at ? new Date(customer.created_at).toLocaleDateString() : '-'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div 
@@ -638,17 +673,14 @@ const CustomersManagement: React.FC = () => {
                 
                 <div className="p-6">
                   <CustomerForm 
-                    onCustomerDataChange={() => {}}
-                    onSaveRef={(saveMethod) => {
-                      // Ao salvar, atualiza a lista e fecha o modal
-                      const originalSave = saveMethod;
-                      return async () => {
-                        await originalSave();
+                    onCustomerSelect={(customer) => {
                         loadCustomers();
                         document.querySelector('[aria-label="Close"]')?.dispatchEvent(
                           new MouseEvent('click', { bubbles: true })
                         );
-                      };
+                    }}
+                    onSave={(customer) => {
+                      loadCustomers();
                     }}
                   />
                 </div>
@@ -720,47 +752,12 @@ const CustomersManagement: React.FC = () => {
                   
                   <Tabs.Content value="edit">
                     <CustomerForm 
-                      onCustomerDataChange={handleCustomerDataChange}
-                      onSaveRef={(saveMethod) => {
-                        // Substitui o método de salvar para atualizar o cliente existente
-                        return async () => {
-                          if (viewingCustomer && viewingCustomer.id) {
-                            try {
-                              // Salva as alterações no cliente
-                              const customerToUpdate: Customer = {
-                                ...viewingCustomer,
-                                id: viewingCustomer.id,
-                              };
-                              
-                              const updatedCustomer = await CustomersService.saveCustomer(customerToUpdate);
-                              
-                              toast({
-                                title: 'Cliente atualizado',
-                                description: 'As alterações foram salvas com sucesso.',
-                                variant: 'success',
-                              });
-                              
-                              // Atualiza a lista de clientes
-                              setCustomers(customers.map(c => c.id === updatedCustomer.id ? updatedCustomer : c));
-                              setViewingCustomer(null);
-                              
-                              // Fecha o modal
-                              document.querySelector('[aria-label="Close"]')?.dispatchEvent(
-                                new MouseEvent('click', { bubbles: true })
-                              );
-                              
-                              // Recarrega a lista
+                      initialCustomer={editingCustomer ? mapCustomerToData(editingCustomer) : undefined}
+                      onCustomerSelect={(customer) => {
+                        handleSaveCustomerChanges();
+                      }}
+                      onSave={(customer) => {
                               loadCustomers();
-                            } catch (error) {
-                              console.error('Erro ao atualizar cliente:', error);
-                              toast({
-                                title: 'Erro',
-                                description: 'Não foi possível salvar as alterações do cliente.',
-                                variant: 'error',
-                              });
-                            }
-                          }
-                        };
                       }}
                     />
                   </Tabs.Content>
@@ -793,8 +790,13 @@ const CustomersManagement: React.FC = () => {
               
               <div className="p-6">
                 <CustomerForm 
-                  onCustomerDataChange={handleCustomerDataChange}
-                  onSaveRef={() => handleSaveCustomerChanges}
+                  initialCustomer={editingCustomer ? mapCustomerToData(editingCustomer) : undefined}
+                  onCustomerSelect={(customer) => {
+                    handleSaveCustomerChanges();
+                  }}
+                  onSave={(customer) => {
+                    loadCustomers();
+                  }}
                 />
                 
                 <div className="mt-6 flex justify-end space-x-3">

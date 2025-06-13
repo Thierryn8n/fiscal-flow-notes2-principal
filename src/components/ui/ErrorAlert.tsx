@@ -1,4 +1,3 @@
-import React from 'react';
 import { AlertCircle, RefreshCw, LogOut } from 'lucide-react';
 import { Button } from './button';
 import { Card } from './card';

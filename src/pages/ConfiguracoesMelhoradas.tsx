@@ -1,21 +1,21 @@
 import React, { useState, useEffect } from 'react';
+import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
+import { UserSettings } from '@/types/settings';
+import { CompanySettings } from '@/components/settings/CompanySettings';
+import { InstallmentSettings } from '@/components/settings/InstallmentSettings';
+import { DeliverySettings } from '@/components/settings/DeliverySettings';
+import { PrinterSettings } from '@/components/settings/PrinterSettings';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Building2, CreditCard, Truck, Printer } from 'lucide-react';
 import { 
   Settings as SettingsIcon, 
-  Printer, 
-  Download, 
   Save, 
-  Copy,
-  User,
-  CreditCard,
   Plus,
   Trash2,
-  Upload,
-  Truck,
   Briefcase
 } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
-import Layout from '@/components/Layout';
-import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -24,7 +24,6 @@ import {
   saveSettings as saveSupabaseSettings,
   uploadCompanyLogo as uploadSupabaseCompanyLogo,
   removeCompanyLogo as removeSupabaseCompanyLogo,
-  UserSettings as SupabaseUserSettings,
   CompanyData as SupabaseCompanyData,
   InstallmentFee as SupabaseInstallmentFee,
   DeliverySettings as SupabaseDeliverySettings,
@@ -36,7 +35,7 @@ import {
 interface LocalInstallmentFee {
   id: string;
   installments: number;
-  fee: number;
+  fee_percentage: number;
 }
 
 // Local interface for company data
@@ -65,9 +64,6 @@ interface LocalDeliveryRadius {
 const SettingsNew = () => {
   const { toast } = useToast();
   const { user } = useAuth();
-
-  const [isLoading, setIsLoading] = useState(false);
-  const [username, setUsername] = useState("");
 
   // Installment Fees State
   const [installmentFees, setInstallmentFees] = useState<LocalInstallmentFee[]>([]);
@@ -118,7 +114,7 @@ const SettingsNew = () => {
     const newFeeItem = { 
       id: uuidv4(), 
       installments: newInstallment, 
-      fee: newFee 
+      fee_percentage: newFee 
     };
     
     setInstallmentFees(prev => [...prev, newFeeItem]);
@@ -278,7 +274,7 @@ const SettingsNew = () => {
               ) : (
                 installmentFees.map(fee => (
                   <div key={fee.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <span>{fee.installments}x: {fee.fee}%</span>
+                    <span>{fee.installments}x: {fee.fee_percentage}%</span>
                     <button 
                       type="button"
                       onClick={(e) => {

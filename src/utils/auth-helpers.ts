@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { Session, AuthError } from '@supabase/supabase-js';
+import { Session } from '@supabase/supabase-js';
 
 type ErrorLike = {
   message?: string;

@@ -1,42 +1,45 @@
 import React, { useState, useEffect } from 'react';
-import { User, MapPin, Phone, Edit, Check, Search, UserRound, MapPinned, Building, Hash, X } from 'lucide-react';
+import { User, MapPin, Phone, Check, Search, UserRound, MapPinned, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useDeviceDetect } from '@/hooks/useDeviceDetect';
 import { CustomersService } from '@/services/customersService';
-import { Customer, CustomerAddress } from '@/types/Customer';
+import { CustomerAddress, CustomerFormData, mapCustomerToForm } from '@/types/Customer';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
 
 // Importações adicionais para o Dialog
 import * as Dialog from '@radix-ui/react-dialog';
 
 export interface CustomerData {
+  id?: string;
   name: string;
-  address: {
-    street: string;
-    number: string;
-    neighborhood: string;
-    city: string;
-    state: string;
-    zipCode: string;
-  };
+  email: string;
   phone: string;
-  email?: string;
-  signature?: string; // Base64 string for signature
+  address: CustomerAddress;
+  owner_id?: string;
 }
 
-export interface CustomerFormProps {
-  onCustomerDataChange: (data: CustomerData) => void;
-  onSaveRef?: (saveMethod: () => void) => void; // Nova propriedade para expor o método de salvamento
+interface CustomerFormProps {
+  initialCustomer?: CustomerFormData;
+  onCustomerSelect?: (customer: CustomerFormData) => void;
+  onSave?: (customer: CustomerFormData) => void;
 }
 
-const CustomerForm: React.FC<CustomerFormProps> = ({ onCustomerDataChange, onSaveRef }) => {
+const CustomerForm: React.FC<CustomerFormProps> = ({
+  initialCustomer,
+  onCustomerSelect,
+  onSave
+}) => {
+  const { user } = useAuth();
   const { toast } = useToast();
   const { isMobile } = useDeviceDetect();
-  const { user } = useAuth();
-  
-  const [customerData, setCustomerData] = useState<CustomerData>({
+  const [isLoading, setIsLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerFormData | null>(null);
+  const [customerData, setCustomerData] = useState<CustomerFormData>(
+    initialCustomer || {
     name: '',
+      email: '',
+      phone: '',
     address: {
       street: '',
       number: '',
@@ -44,394 +47,139 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onCustomerDataChange, onSav
       city: '',
       state: '',
       zipCode: '',
-    },
-    phone: '',
-    email: '',
-  });
+      }
+    }
+  );
   
-  // Signature state (would be implemented with a library like react-signature-canvas)
-  const [signature, setSignature] = useState<string | undefined>(undefined);
-  const [showSignaturePad, setShowSignaturePad] = useState(false);
-  
-  // Estado para os clientes salvos
-  const [savedCustomers, setSavedCustomers] = useState<Customer[]>([]);
-  const [isLoadingCustomers, setIsLoadingCustomers] = useState(false);
-  
-  // Estado para controlar o carregamento do CEP
-  const [loadingCep, setLoadingCep] = useState(false);
-  
-  // Estado para controlar o filtro de pesquisa
-  const [searchTerm, setSearchTerm] = useState('');
-
-  // Carregar clientes do Supabase
+  // Carregar cliente inicial se fornecido
   useEffect(() => {
-    loadCustomers();
-  }, []);
-
-  // Função para carregar clientes do Supabase
-  const loadCustomers = async () => {
-    if (!user) return;
-    
-    setIsLoadingCustomers(true);
-    try {
-      const result = await CustomersService.getCustomers({
-        page: 1,
-        pageSize: 100 // Carregar uma quantidade razoável para performance
-      });
-      
-      setSavedCustomers(result.data);
-    } catch (error) {
-      console.error('Erro ao carregar clientes:', error);
-      toast({
-        title: 'Erro',
-        description: 'Não foi possível carregar a lista de clientes.',
-        variant: 'error',
-      });
-    } finally {
-      setIsLoadingCustomers(false);
+    if (initialCustomer) {
+      setCustomerData(initialCustomer);
+      setSelectedCustomer(initialCustomer);
     }
-  };
+  }, [initialCustomer]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    
-    if (name.includes('.')) {
-      const [parent, child] = name.split('.');
-      setCustomerData(prev => ({
-        ...prev,
-        [parent]: {
-          ...(prev[parent as keyof typeof prev] as Record<string, string>),
-          [child]: value
-        }
-      }));
-    } else {
-      setCustomerData(prev => ({
-        ...prev,
-        [name]: value
-      }));
-    }
-    
-    // Update parent component with new data
-    const updatedData = name.includes('.')
-      ? {
-          ...customerData,
-          address: {
-            ...customerData.address,
-            [name.split('.')[1]]: value
-          }
-        }
-      : {
-          ...customerData,
-          [name]: value
-        };
-    
-    onCustomerDataChange({
-      ...updatedData,
-      signature
-    });
-  };
-
-  // Buscar endereço pelo CEP
-  const fetchAddressByCep = async (cep: string) => {
-    // Limpar formatação do CEP (remover hífen)
-    const cleanCep = cep.replace(/\D/g, '');
-    
-    // Verificar se o CEP tem o tamanho correto
-    if (cleanCep.length !== 8) {
-      return;
-    }
-    
-    setLoadingCep(true);
+  // Função para buscar clientes
+  const searchCustomers = async (term: string) => {
+    if (!term) return;
     
     try {
-      const response = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
+      setIsLoading(true);
+      const customers = await CustomersService.searchCustomers(term);
       
-      if (!response.ok) {
-        throw new Error('Erro ao buscar o CEP');
-      }
-      
-      const data = await response.json();
-      
-      // Verificar se o CEP existe
-      if (data.erro) {
+      if (customers.length > 0) {
+        // Mapear os clientes para o formato esperado
+        const mappedCustomers = customers.map(customer => ({
+          id: customer.id,
+          name: customer.name,
+          email: customer.email || '',
+          phone: customer.phone,
+          address: customer.address as CustomerFormData['address'],
+          owner_id: customer.owner_id
+        }));
+
+        // Mostrar resultados em um toast
         toast({
-          title: 'CEP não encontrado',
-          description: 'Verifique o CEP informado.',
-          variant: 'warning',
-        });
-        return;
-      }
-      
-      // Atualizar os campos de endereço
-      const updatedAddress = {
-        ...customerData.address,
-        street: data.logradouro || '',
-        neighborhood: data.bairro || '',
-        city: data.localidade || '',
-        state: data.uf || '',
-      };
-      
-      setCustomerData(prev => ({
-        ...prev,
-        address: updatedAddress
-      }));
-      
-      // Atualizar o componente pai
-      onCustomerDataChange({
-        ...customerData,
-        address: updatedAddress,
-        signature
-      });
-      
-      toast({
-        title: 'Endereço encontrado',
-        description: 'Os dados do endereço foram preenchidos automaticamente.',
-        variant: 'success',
-      });
-    } catch (error) {
-      console.error('Erro ao buscar CEP:', error);
-      toast({
-        title: 'Erro ao buscar CEP',
-        description: 'Ocorreu um erro ao buscar o endereço. Tente novamente.',
-        variant: 'error',
-      });
-    } finally {
-      setLoadingCep(false);
-    }
-  };
-  
-  // Manipulador para o evento de blur do campo CEP
-  const handleCepBlur = (e: React.FocusEvent<HTMLInputElement>) => {
-    const cep = e.target.value;
-    if (cep && cep.length >= 8) {
-      fetchAddressByCep(cep);
-    }
-  };
-
-  // Salvar cliente no Supabase
-  const saveCustomerToSupabase = async () => {
-    // Verificar se temos dados suficientes para salvar o cliente
-    if (!customerData.name || !customerData.phone) {
-      toast({
-        title: 'Dados incompletos',
-        description: 'Nome e telefone são obrigatórios para salvar o cliente.',
-        variant: 'warning',
-      });
-      return; // Não salva se não tiver os campos obrigatórios
-    }
-    
-    if (!user) {
-      toast({
-        title: 'Usuário não autenticado',
-        description: 'Você precisa estar logado para salvar clientes.',
-        variant: 'error',
-      });
-      return;
-    }
-    
-    try {
-      // Verificar se a sessão está válida antes de tentar salvar
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData.session) {
-        // Tentar renovar a sessão automaticamente
-        const { data: refreshData } = await supabase.auth.refreshSession();
-        if (!refreshData.session) {
-          toast({
-            title: 'Sessão expirada',
-            description: 'Sua sessão expirou. Por favor, faça login novamente.',
-            variant: 'error',
-          });
-          // Redirecionar para página de login aqui, se necessário
-          return;
-        }
-      }
-    
-      // Converter para o formato do Customer para salvar
-      const customerToSave: Customer = {
-        name: customerData.name,
-        phone: customerData.phone,
-        address: customerData.address,
-        signature: customerData.signature,
-        ownerId: user.id
-      };
-      
-      // Verificar se este cliente já existe (pelo ID armazenado)
-      const existingCustomerId = savedCustomers.find(
-      c => c.name.toLowerCase() === customerData.name.toLowerCase() && c.phone === customerData.phone
-      )?.id;
-    
-      if (existingCustomerId) {
-        customerToSave.id = existingCustomerId;
-      }
-      
-      // Salvar no Supabase
-      const savedCustomer = await CustomersService.saveCustomer(customerToSave);
-      
-      if (savedCustomer) {
-        // Atualizar o customerData com os dados do cliente salvo, incluindo o ID
-        const updatedCustomerData = {
-          name: savedCustomer.name,
-          address: savedCustomer.address as CustomerData['address'],
-          phone: savedCustomer.phone,
-          signature: savedCustomer.signature
-        };
-        
-        // Atualizar o estado local
-        setCustomerData(updatedCustomerData);
-        
-        // Atualizar o componente pai com os dados atualizados
-        onCustomerDataChange(updatedCustomerData);
-      
-      toast({
-        title: 'Cliente salvo',
-          description: 'Os dados do cliente foram salvos com sucesso.',
-          variant: 'success',
+          title: `${customers.length} cliente(s) encontrado(s)`,
+          description: "Selecione um cliente da lista",
+          variant: "success"
         });
         
-        // Atualizar a lista de clientes
-        if (!existingCustomerId) {
-          setSavedCustomers([...savedCustomers, savedCustomer]);
-        } else {
-          setSavedCustomers(
-            savedCustomers.map(c => c.id === existingCustomerId ? savedCustomer : c)
-          );
-    }
-      }
-    } catch (error: any) {
-      console.error('Erro ao salvar cliente:', error);
-  
-      // Tratamento específico para erros de autenticação
-      if (error.message?.includes('autenticação') || error.message?.includes('sessão expirada') || 
-          error.message?.includes('não autenticado') || error.status === 401) {
-        toast({
-          title: 'Erro de autenticação',
-          description: 'Sua sessão expirou. Por favor, recarregue a página e faça login novamente.',
-          variant: 'error',
-        });
-        
-        // Tentar renovar a sessão automaticamente
-        try {
-          console.log("Tentando renovar sessão após erro de autenticação...");
-          const { data: refreshData } = await supabase.auth.refreshSession();
-          if (refreshData.session) {
-            toast({
-              title: 'Sessão renovada',
-              description: 'Tente salvar o cliente novamente.',
-              variant: 'success',
-            });
-          }
-        } catch (refreshError) {
-          console.error("Erro ao renovar sessão:", refreshError);
-        }
+        return mappedCustomers;
       } else {
         toast({
-          title: 'Erro ao salvar cliente',
-          description: error.message || 'Ocorreu um erro ao salvar os dados do cliente.',
-          variant: 'error',
+          title: "Nenhum cliente encontrado",
+          description: "Tente outro termo de busca ou cadastre um novo cliente",
+          variant: "warning"
         });
+        return [];
       }
+    } catch (error) {
+      console.error('Erro ao buscar clientes:', error);
+      toast({
+        title: "Erro ao buscar clientes",
+        description: "Tente novamente mais tarde",
+        variant: "error"
+      });
+      return [];
+    } finally {
+      setIsLoading(false);
     }
   };
   
-  // Expor método de salvamento ao componente pai
-  useEffect(() => {
-    if (onSaveRef) {
-      onSaveRef(saveCustomerToSupabase);
-    }
-  }, [onSaveRef, customerData, signature, user]);
-
-  // Mock signature capture
-  const captureSignature = () => {
-    setShowSignaturePad(true);
-    // In a real implementation, we would render a canvas for signature
-  };
-
-  // Mock clear signature
-  const clearSignature = () => {
-    setSignature(undefined);
-    setShowSignaturePad(false);
-    
-    // Update parent component
-    onCustomerDataChange({
-      ...customerData,
-      signature: undefined
-    });
-  };
-  
-  // Mock save signature
-  const saveSignature = () => {
-    // In a real implementation, this would get the signature data from the canvas
-    const mockSignatureData = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...";
-    setSignature(mockSignatureData);
-    setShowSignaturePad(false);
-    
-    // Update parent component
-    onCustomerDataChange({
-      ...customerData,
-      signature: mockSignatureData
-    });
-  };
-
-  // Buscar clientes por termo de pesquisa no Supabase
-  const handleSearchCustomers = async () => {
-    if (!searchTerm.trim()) {
-      await loadCustomers(); // Se a busca for vazia, carrega todos os clientes
+  const handleSave = async () => {
+    if (!user?.id) {
+      toast({
+        title: "Erro de autenticação",
+        description: "Você precisa estar logado para salvar clientes",
+        variant: "error"
+      });
       return;
     }
     
     try {
-      const customers = await CustomersService.searchCustomers(searchTerm);
-      setSavedCustomers(customers);
-    } catch (error) {
-      console.error('Erro ao buscar clientes:', error);
-    }
-  };
+      setIsLoading(true);
 
-  // Load customer data from saved customers
-  const handleSelectCustomer = (customerId: string) => {
-    const selectedCustomer = savedCustomers.find(c => c.id === customerId);
-    if (selectedCustomer) {
-      setCustomerData({
-        name: selectedCustomer.name,
-        address: selectedCustomer.address as CustomerData['address'],
-        phone: selectedCustomer.phone,
-        signature: selectedCustomer.signature
-      });
+      // Preparar dados do cliente
+      const customerToSave = {
+        ...customerData,
+        owner_id: user.id
+      };
       
-      // Update parent component
-      onCustomerDataChange({
-        name: selectedCustomer.name,
-        address: selectedCustomer.address as CustomerData['address'],
-        phone: selectedCustomer.phone,
-        signature: selectedCustomer.signature
-      });
+      // Salvar cliente
+      const savedCustomer = await CustomersService.saveCustomer(customerToSave);
       
+      // Mapear o cliente salvo para o formato do formulário
+      const mappedCustomer = mapCustomerToForm(savedCustomer);
+        
+      // Atualizar estado local
+      setCustomerData(mappedCustomer);
+        
+      // Notificar componente pai
+      if (onCustomerSelect) {
+        onCustomerSelect(mappedCustomer);
+    }
+
+      // Chamar callback de salvamento se existir
+      if (onSave) {
+        onSave(mappedCustomer);
+    }
+
       toast({
-        title: 'Cliente carregado',
-        description: 'Os dados do cliente foram carregados com sucesso.',
+        title: "Cliente salvo com sucesso",
+        variant: "success"
       });
+
+    } catch (error) {
+      console.error('Erro ao salvar cliente:', error);
+      toast({
+        title: "Erro ao salvar cliente",
+        description: "Tente novamente mais tarde",
+        variant: "error"
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
   
-  // Handle search input change and trigger search when Enter is pressed
-  const handleSearchInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchTerm(e.target.value);
-    
-    // Auto search after 500ms if not empty
-    if (e.target.value.trim()) {
-      const timer = setTimeout(() => {
-        handleSearchCustomers();
-      }, 500);
-      
-      return () => clearTimeout(timer);
+  // Função para selecionar um cliente
+  const handleCustomerSelect = (customer: CustomerFormData) => {
+    setSelectedCustomer(customer);
+    setCustomerData(customer);
+    if (onCustomerSelect) {
+      onCustomerSelect(customer);
     }
   };
   
-  // Handle key press in search input
-  const handleSearchKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      handleSearchCustomers();
-    }
+  // Função para atualizar campos do endereço
+  const handleAddressChange = (field: keyof CustomerAddress, value: string) => {
+    setCustomerData((prev: CustomerFormData) => ({
+      ...prev,
+      address: {
+        ...prev.address,
+        [field]: value
+      }
+    }));
   };
 
   return (
@@ -477,8 +225,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onCustomerDataChange, onSav
                         type="text"
                         placeholder="Buscar cliente por nome ou telefone..."
                         value={searchTerm}
-                        onChange={handleSearchInputChange}
-                        onKeyDown={handleSearchKeyPress}
+                        onChange={(e) => setSearchTerm(e.target.value)}
                         className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-fiscal-green-500 focus:border-fiscal-green-500 transition-colors shadow-sm bg-gray-50 hover:bg-white focus:bg-white"
                       />
                       <div className="absolute left-3 top-1/2 -translate-y-1/2 text-fiscal-green-500">
@@ -488,7 +235,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onCustomerDataChange, onSav
                         <button 
                           onClick={() => {
                             setSearchTerm('');
-                            loadCustomers();
+                            searchCustomers(searchTerm);
                           }}
                           className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100"
                         >
@@ -498,17 +245,16 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onCustomerDataChange, onSav
                     </div>
                     
                     <div className="max-h-[50vh] overflow-y-auto">
-                      {isLoadingCustomers ? (
+                      {isLoading ? (
                         <div className="flex justify-center items-center py-10">
                           <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-fiscal-green-500"></div>
                           <span className="ml-2 text-gray-600">Carregando clientes...</span>
                         </div>
-                      ) : savedCustomers.length > 0 ? (
+                      ) : selectedCustomer ? (
                         <div className="space-y-2">
-                          {savedCustomers.map(customer => (
-                            <Dialog.Close asChild key={customer.id}>
+                          <Dialog.Close asChild>
                               <button
-                                onClick={() => handleSelectCustomer(customer.id!)}
+                              onClick={() => handleCustomerSelect(selectedCustomer)}
                                 className="w-full text-left p-3 rounded-lg hover:bg-fiscal-green-50 focus:bg-fiscal-green-50 focus:outline-none transition-all border border-gray-100 hover:border-fiscal-green-200 hover:shadow-sm group"
                               >
                                 <div className="flex items-center">
@@ -516,15 +262,15 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onCustomerDataChange, onSav
                                     <UserRound size={18} />
                                   </div>
                                   <div className="flex-1">
-                                    <div className="font-medium group-hover:text-fiscal-green-700 transition-colors">{customer.name}</div>
+                                  <div className="font-medium group-hover:text-fiscal-green-700 transition-colors">{selectedCustomer.name}</div>
                                     <div className="text-sm text-gray-500 flex items-center">
-                                      <Phone size={14} className="mr-1 opacity-70" /> {customer.phone}
+                                    <Phone size={14} className="mr-1 opacity-70" /> {selectedCustomer.phone}
                                     </div>
-                                    {customer.address && customer.address.city && (
+                                  {selectedCustomer.address && selectedCustomer.address.city && (
                                       <div className="text-sm text-gray-500 flex items-center mt-1">
                                         <MapPin size={14} className="mr-1 opacity-70" /> 
-                                        {customer.address.city}
-                                        {customer.address.state && `, ${customer.address.state}`}
+                                      {selectedCustomer.address.city}
+                                      {selectedCustomer.address.state && `, ${selectedCustomer.address.state}`}
                                       </div>
                                     )}
                                   </div>
@@ -536,7 +282,6 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onCustomerDataChange, onSav
                                 </div>
                               </button>
                             </Dialog.Close>
-                          ))}
                         </div>
                       ) : (
                         <div className="text-center py-8">
@@ -589,8 +334,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onCustomerDataChange, onSav
                       type="text"
                       placeholder="Buscar cliente..."
                       value={searchTerm}
-                      onChange={handleSearchInputChange}
-                      onKeyDown={handleSearchKeyPress}
+                      onChange={(e) => setSearchTerm(e.target.value)}
                       className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-gray-200 text-sm"
                     />
                     <div className="absolute left-3 top-1/2 -translate-y-1/2 text-fiscal-green-500">
@@ -600,7 +344,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onCustomerDataChange, onSav
                       <button 
                         onClick={() => {
                           setSearchTerm('');
-                          loadCustomers();
+                          searchCustomers(searchTerm);
                         }}
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
                       >
@@ -610,31 +354,29 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onCustomerDataChange, onSav
                   </div>
                   
                   <div className="max-h-[60vh] overflow-y-auto">
-                    {isLoadingCustomers ? (
+                    {isLoading ? (
                       <div className="flex justify-center items-center py-10">
                         <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-fiscal-green-500"></div>
                         <span className="ml-2 text-gray-600 text-sm">Carregando...</span>
                       </div>
-                    ) : savedCustomers.length > 0 ? (
+                    ) : selectedCustomer ? (
                       <div className="space-y-1.5">
-                        {savedCustomers.map(customer => (
-                          <Dialog.Close asChild key={customer.id}>
+                        <Dialog.Close asChild>
                             <button
-                              onClick={() => handleSelectCustomer(customer.id!)}
+                            onClick={() => handleCustomerSelect(selectedCustomer)}
                               className="w-full text-left p-2.5 rounded-lg bg-gray-50 hover:bg-fiscal-green-50 border border-gray-100 hover:border-fiscal-green-200 text-sm"
                             >
                               <div className="flex items-center">
                                 <div className="flex-1">
-                                  <div className="font-medium">{customer.name}</div>
+                                <div className="font-medium">{selectedCustomer.name}</div>
                                   <div className="text-xs text-gray-500 flex items-center">
-                                    <Phone size={12} className="mr-1" /> {customer.phone}
+                                  <Phone size={12} className="mr-1" /> {selectedCustomer.phone}
                                   </div>
                                 </div>
                                 <Check size={16} className="text-fiscal-green-500" />
                               </div>
                             </button>
                           </Dialog.Close>
-                        ))}
                       </div>
                     ) : (
                       <div className="text-center py-6">
@@ -668,7 +410,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onCustomerDataChange, onSav
             id="name"
             name="name"
             value={customerData.name}
-            onChange={handleChange}
+            onChange={(e) => setCustomerData(prev => ({ ...prev, name: e.target.value }))}
             placeholder="Nome completo do cliente"
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-fiscal-green-500 focus:border-fiscal-green-500"
             required
@@ -685,7 +427,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onCustomerDataChange, onSav
             id="phone"
             name="phone"
             value={customerData.phone}
-            onChange={handleChange}
+            onChange={(e) => setCustomerData(prev => ({ ...prev, phone: e.target.value }))}
             placeholder="(00) 00000-0000"
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-fiscal-green-500 focus:border-fiscal-green-500"
               required
@@ -702,7 +444,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onCustomerDataChange, onSav
               id="email"
               name="email"
               value={customerData.email}
-              onChange={handleChange}
+              onChange={(e) => setCustomerData(prev => ({ ...prev, email: e.target.value }))}
               placeholder="exemplo@exemplo.com"
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-fiscal-green-500 focus:border-fiscal-green-500"
             />
@@ -726,8 +468,8 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onCustomerDataChange, onSav
               type="text"
               id="address.street"
               name="address.street"
-              value={customerData.address.street}
-              onChange={handleChange}
+              value={customerData.address?.street}
+              onChange={(e) => handleAddressChange('street', e.target.value)}
                 placeholder="Rua"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-fiscal-green-500 focus:border-fiscal-green-500"
             />
@@ -742,8 +484,8 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onCustomerDataChange, onSav
               type="text"
               id="address.number"
               name="address.number"
-              value={customerData.address.number}
-              onChange={handleChange}
+              value={customerData.address?.number}
+              onChange={(e) => handleAddressChange('number', e.target.value)}
                   placeholder="N°"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-fiscal-green-500 focus:border-fiscal-green-500"
             />
@@ -758,8 +500,8 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onCustomerDataChange, onSav
               type="text"
               id="address.neighborhood"
               name="address.neighborhood"
-              value={customerData.address.neighborhood}
-              onChange={handleChange}
+              value={customerData.address?.neighborhood}
+              onChange={(e) => handleAddressChange('neighborhood', e.target.value)}
               placeholder="Bairro"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-fiscal-green-500 focus:border-fiscal-green-500"
             />
@@ -777,20 +519,16 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onCustomerDataChange, onSav
               type="text"
               id="address.zipCode"
               name="address.zipCode"
-              value={customerData.address.zipCode}
-              onChange={handleChange}
-                  onBlur={handleCepBlur}
+              value={customerData.address?.zipCode}
+              onChange={(e) => handleAddressChange('zipCode', e.target.value)}
+                  onBlur={(e) => {
+                    if (e.target.value.length >= 8) {
+                      searchCustomers(e.target.value);
+                    }
+                  }}
               placeholder="00000-000"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-fiscal-green-500 focus:border-fiscal-green-500"
             />
-                {loadingCep && (
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                      <div className="animate-spin h-4 w-4 border-t-2 border-fiscal-green-500 rounded-full"></div>
-                  </div>
-                )}
-              </div>
-                <div className="text-xs text-fiscal-green-700 mt-1">
-                  Digite o CEP para preencher o endereço automaticamente
             </div>
           </div>
           
@@ -803,8 +541,8 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onCustomerDataChange, onSav
               type="text"
               id="address.city"
               name="address.city"
-              value={customerData.address.city}
-              onChange={handleChange}
+              value={customerData.address?.city}
+              onChange={(e) => handleAddressChange('city', e.target.value)}
               placeholder="Cidade"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-fiscal-green-500 focus:border-fiscal-green-500"
             />
@@ -819,8 +557,8 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onCustomerDataChange, onSav
               type="text"
               id="address.state"
               name="address.state"
-              value={customerData.address.state}
-              onChange={handleChange}
+              value={customerData.address?.state}
+              onChange={(e) => handleAddressChange('state', e.target.value)}
                   placeholder="Estado"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-fiscal-green-500 focus:border-fiscal-green-500"
                 />
@@ -831,12 +569,18 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onCustomerDataChange, onSav
       
         <div className="mt-4 flex justify-end">
           <button
-            type="button"
-            onClick={saveCustomerToSupabase}
-            className="bg-fiscal-green-500 hover:bg-fiscal-green-600 text-white px-4 py-2 rounded-md flex items-center focus:outline-none focus:ring-2 focus:ring-fiscal-green-500 focus:ring-opacity-50 transition-colors"
+            type="submit"
+            onClick={handleSave}
+            className="bg-fiscal-green-500 hover:bg-fiscal-green-600 text-white px-4 py-2 rounded-md flex items-center focus:outline-none focus:ring-2 focus:ring-fiscal-green-500 focus:ring-opacity-50 transition-colors disabled:opacity-50"
           >
-            <Check size={16} className="mr-1.5" />
-            Salvar Cliente
+            {isLoading ? (
+              <>
+                <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
+                Salvando...
+              </>
+            ) : (
+              'Salvar'
+            )}
           </button>
         </div>
       </div>

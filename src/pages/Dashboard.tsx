@@ -4,19 +4,17 @@ import { Link, useNavigate } from 'react-router-dom';
 import { 
   FileText, Printer, ChevronRight, BarChart2, LineChart as LineChartIcon, 
   TrendingUp, Calendar, Package, Users, CreditCard, Check,
-  ArrowUpRight, Clock, DollarSign, AlertTriangle, CheckCircle, PieChart as PieChartIcon
+  Clock, DollarSign, AlertTriangle, CheckCircle, PieChart as PieChartIcon
 } from 'lucide-react';
 import { 
   Card, CardContent, CardHeader, CardTitle, CardDescription 
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  LineChart, Line, Area, AreaChart, Cell, PieChart, Pie 
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
+  Area, AreaChart, Cell, PieChart, Pie 
 } from 'recharts';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/components/ui/use-toast';
@@ -55,18 +53,10 @@ interface PerformanceStats {
   avgQuoteValue: number;
 }
 
-const productDistributionData = [
-  { name: 'Produto A', value: 35 },
-  { name: 'Produto B', value: 25 },
-  { name: 'Produto C', value: 20 },
-  { name: 'Outros', value: 20 },
-];
-
 const COLORS = [CHART_COLORS.primary, CHART_COLORS.secondary, CHART_COLORS.accent, CHART_COLORS.neutral];
 
 const Dashboard: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('overview');
   const [recentQuotes, setRecentQuotes] = useState<Quote[]>([]);
   const [salesData, setSalesData] = useState<SalesData[]>([]);
   const [productDistributionData, setProductDistributionData] = useState<ProductData[]>([]);
@@ -77,6 +67,7 @@ const Dashboard: React.FC = () => {
     avgQuoteValue: 0
   });
   const [isAuthChecked, setIsAuthChecked] = useState(false);
+  const [activeTab, setActiveTab] = useState("overview");
   
   const { toast } = useToast();
   const { user } = useAuth();
@@ -553,7 +544,7 @@ const Dashboard: React.FC = () => {
                         fill="#8884d8"
                         dataKey="value"
                       >
-                        {productDistributionData.map((entry, index) => (
+                        {productDistributionData.map((_, index) => (
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>

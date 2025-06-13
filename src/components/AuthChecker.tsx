@@ -10,12 +10,9 @@ const PUBLIC_PAGES = [
   '/register',
   '/reset-password',
   '/',
-  '/ecommerce',
   '/forgot-password',
   '/recover-password',
-  '/diagnose-auth',
-  '/ecommerce/auth',
-  '/ecommerce/wishlist'
+  '/diagnose-auth'
 ];
 
 // Verifica se o caminho atual é uma página pública

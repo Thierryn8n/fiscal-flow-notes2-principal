@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
@@ -22,7 +22,6 @@ import {
   Eye,
   Edit,
   DollarSign,
-  Calendar as CalendarIcon,
   CreditCard,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -52,7 +51,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { NotesService } from '@/services/notesService';
-import { ThumbnailService } from '@/services/thumbnailService';
+import { PrintService } from '@/services/printService';
 import { FiscalNote, NoteFilters, NoteStatus } from '@/types/FiscalNote';
 import {
   Dialog,
@@ -65,8 +64,8 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Badge } from '@/components/ui/badge';
-import { PrintService } from '@/services/printService';
 import { useDeviceDetect } from '@/hooks/useDeviceDetect';
+import { SellersService } from '@/services/sellersService';
 
 const NotesManagement: React.FC = () => {
   const { user } = useAuth();
@@ -82,9 +81,9 @@ const NotesManagement: React.FC = () => {
   const [isOwner, setIsOwner] = useState(false);
   const [sellers, setSellers] = useState<any[]>([]); // Lista de vendedores para filtro
   
-  // Estados para paginação
+  // Estado para paginação
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(12); // Aumentado para melhor layout de cards
+  const pageSize = 12; // Aumentado para melhor layout de cards
   
   // Estados para os filtros
   const [filters, setFilters] = useState<NoteFilters>({});
@@ -106,15 +105,13 @@ const NotesManagement: React.FC = () => {
   
   // Estados para dados estatísticos
   const [stats, setStats] = useState({
+    total: 0,
     draft: 0,
     issued: 0,
     printed: 0,
     finalized: 0,
     canceled: 0
   });
-  
-  // Estado para armazenar miniaturas das notas
-  const [noteThumbnails, setNoteThumbnails] = useState<Record<string, string>>({});
   
   // Verificar se o usuário é proprietário ou vendedor
   useEffect(() => {
@@ -202,12 +199,10 @@ const NotesManagement: React.FC = () => {
         user.id,
         notesFilters,
         currentPage,
-        pageSize,
-        isOwner
+        pageSize
       );
       
       // Aplicar filtro de status de pagamento no front-end
-      // já que esse filtro não existe no back-end
       const filteredData = paymentStatusFilter 
         ? filterNotesByPaymentStatus(result.data)
         : result.data;
@@ -220,12 +215,12 @@ const NotesManagement: React.FC = () => {
         user.id,
         { ...notesFilters, status: undefined },
         1,
-        1000, // Pegar até 1000 notas para estatísticas
-        isOwner
+        1000 // Pegar até 1000 notas para estatísticas
       );
       
       if (allNotes.data) {
         const statsCounts = {
+          total: 0,
           draft: 0,
           issued: 0,
           printed: 0,
@@ -253,44 +248,20 @@ const NotesManagement: React.FC = () => {
     }
   }, [user, filters, searchTerm, statusFilter, paymentStatusFilter, sellerFilter, dateRangeFilter, currentPage, pageSize, isOwner, toast, activeTab]);
   
-  // Carregar notas quando o componente é montado ou filtros mudam
+  // Efeito para carregar as notas quando os filtros mudarem
   useEffect(() => {
     fetchNotes();
-  }, [fetchNotes]);
+  }, [currentPage, filters, searchTerm, statusFilter, paymentStatusFilter, sellerFilter, dateRangeFilter]);
   
-  // Buscar miniaturas das notas carregadas
+  // Efeito para carregar os vendedores
   useEffect(() => {
-    const loadThumbnails = async () => {
-      if (!notes.length) return;
-      
-      const thumbnails: Record<string, string> = {};
-      
-      for (const note of notes) {
-        if (!note.id) continue;
-        
-        try {
-          const thumbnail = await ThumbnailService.getThumbnail(note);
-          thumbnails[note.id] = thumbnail;
-        } catch (error) {
-          console.error(`Erro ao carregar miniatura da nota ${note.id}:`, error);
-        }
-      }
-      
-      setNoteThumbnails(thumbnails);
-    };
-    
-    loadThumbnails();
-  }, [notes]);
+    loadSellers();
+  }, []);
   
-  // Função para obter a miniatura de uma nota específica
-  const getNoteThumbnail = (note: FiscalNote): string => {
-    if (!note.id || !noteThumbnails[note.id]) {
-      // Retornar um placeholder vazio se não houver miniatura
-      return '';
-    }
-    
-    return noteThumbnails[note.id];
-  };
+  // Efeito para atualizar as estatísticas
+  useEffect(() => {
+    updateStats();
+  }, [notes]);
   
   // Função para excluir uma nota (apenas rascunhos)
   const handleDeleteNote = async () => {
@@ -337,14 +308,15 @@ const NotesManagement: React.FC = () => {
       // Em dispositivos móveis, enviar para a fila de impressão
       try {
         setIsLoading(true);
-        const request = await PrintService.sendPrintRequest(note.id, note, user.id);
-        if (request) {
+        const result = await PrintService.sendPrintRequest(note.id, note, user.id);
+        
+        if (result.success) {
           toast({
             title: 'Enviado para Impressão',
             description: `O orçamento #${note.noteNumber} foi enviado para a fila de impressão.`,
           });
         } else {
-          throw new Error('Falha ao enviar para a fila de impressão');
+          throw new Error(result.error || 'Falha ao enviar para a fila de impressão');
         }
       } catch (error: any) {
         console.error('Erro ao enviar para fila de impressão:', error);
@@ -421,7 +393,8 @@ const NotesManagement: React.FC = () => {
     }
     
     // Se a nota está finalizada, consideramos como paga
-    if (note.status === 'finalized') {
+    const validStatuses: NoteStatus[] = ['draft', 'issued', 'printed', 'canceled', 'finalized'];
+    if (validStatuses.includes(note.status) && note.status === 'finalized') {
       return true;
     }
     
@@ -445,7 +418,7 @@ const NotesManagement: React.FC = () => {
     }
     
     // Se chegou aqui, não temos informação suficiente, depende do status
-    return note.status === 'finalized';
+    return validStatuses.includes(note.status) && note.status === 'finalized';
   };
   
   // Obter texto e cor para o badge de pagamento
@@ -596,6 +569,34 @@ const NotesManagement: React.FC = () => {
     }
   };
 
+  // Carregar vendedores
+  const loadSellers = async () => {
+    try {
+      const fetchedSellers = await SellersService.getSellers();
+      setSellers(fetchedSellers);
+    } catch (error) {
+      console.error('Erro ao carregar vendedores:', error);
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível carregar a lista de vendedores.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Atualizar estatísticas
+  const updateStats = () => {
+    const newStats = {
+      total: notes.length,
+      draft: notes.filter(note => note.status === 'draft').length,
+      issued: notes.filter(note => note.status === 'issued').length,
+      printed: notes.filter(note => note.status === 'printed').length,
+      finalized: notes.filter(note => note.status === 'finalized').length,
+      canceled: notes.filter(note => note.status === 'canceled').length
+    };
+    setStats(newStats);
+  };
+
   return (
     <Layout>
       <div className="space-y-6 bg-slate-50 p-4 rounded-lg bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAwIDEwIEwgNDAgMTAgTSAxMCAwIEwgMTAgNDAgTSAwIDIwIEwgNDAgMjAgTSAyMCAwIEwgMjAgNDAgTSAwIDMwIEwgNDAgMzAgTSAzMCAwIEwgMzAgNDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2UyZThmMCIgb3BhY2l0eT0iMC40IiBzdHJva2Utd2lkdGg9IjEiLz48L3BhdHRlcm4+PC9kZWZzPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InVybCgjZ3JpZCkiLz48L3N2Zz4=')]">
@@ -726,7 +727,7 @@ const NotesManagement: React.FC = () => {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       <div className="flex items-center gap-1">
-                        <CalendarIcon size={14} />
+                        <Calendar size={14} />
                         Data Inicial
                       </div>
                     </label>
@@ -744,7 +745,7 @@ const NotesManagement: React.FC = () => {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       <div className="flex items-center gap-1">
-                        <CalendarIcon size={14} />
+                        <Calendar size={14} />
                         Data Final
                       </div>
                     </label>
@@ -869,7 +870,7 @@ const NotesManagement: React.FC = () => {
                                 #{note.noteNumber}
                               </h3>
                               <p className="text-gray-500 text-sm flex items-center gap-1 mt-1">
-                                <CalendarIcon size={14} />
+                                <Calendar size={14} />
                                 {formatDate(note.date)}
                               </p>
                             </div>

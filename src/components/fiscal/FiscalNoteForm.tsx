@@ -2,22 +2,25 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useReactToPrint } from 'react-to-print';
 import ProductSelector, { SelectedProduct } from './ProductSelector';
-import CustomerForm, { CustomerData } from './CustomerForm';
-import PaymentForm, { PaymentData } from './PaymentForm';
+import PaymentForm, { PaymentData as FormPaymentData } from './PaymentForm';
 import PrintableNote from './PrintableNote';
-import { Printer, Save, ArrowLeft, Check, Clock, FileText, Smartphone, ChevronDown, ChevronUp, Info } from 'lucide-react';
+import { Printer, Save, ArrowLeft, FileText, Smartphone, ChevronDown, ChevronUp } from 'lucide-react';
 import { useDeviceDetect } from '@/hooks/useDeviceDetect';
-import { PrintService } from '@/services/LocalPrintService';
+import { PrintService } from '@/services/printService';
 import { useAuth } from '@/contexts/AuthContext';
 import { NotesService } from '@/services/notesService';
 import { CustomersService } from '@/services/customersService';
-import { FiscalNote, NoteStatus } from '@/types/FiscalNote';
+import { FiscalNote, NoteStatus, PaymentData as FiscalNotePaymentData } from '@/types/FiscalNote';
+import { CustomerFormData } from '@/types/Customer';
+import CustomerForm from './CustomerForm';
 
 const FiscalNoteForm: React.FC = () => {
   const { toast } = useToast();
   const [products, setProducts] = useState<SelectedProduct[]>([]);
-  const [customerData, setCustomerData] = useState<CustomerData>({
+  const [customerData, setCustomerData] = useState<CustomerFormData>({
     name: '',
+    email: '',
+    phone: '',
     address: {
       street: '',
       number: '',
@@ -25,12 +28,12 @@ const FiscalNoteForm: React.FC = () => {
       city: '',
       state: '',
       zipCode: '',
-    },
-    phone: '',
+    }
   });
-  const [paymentData, setPaymentData] = useState<PaymentData>({
+  const [paymentData, setPaymentData] = useState<FormPaymentData>({
     method: 'cash',
     installments: 1,
+    total: 0
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   
@@ -44,11 +47,8 @@ const FiscalNoteForm: React.FC = () => {
   
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const printableNoteRef = useRef<HTMLDivElement>(null);
-  const { isMobile, isDesktop } = useDeviceDetect();
+  const { isMobile } = useDeviceDetect();
   const { user } = useAuth();
-  
-  // Default printer configuration
-  const defaultPrinter = "HP DESKJET 2700 SERIES";
   
   // Generate a random note number
   const noteNumber = useRef(`${new Date().getFullYear()}${String(Math.floor(Math.random() * 10000)).padStart(5, '0')}`);
@@ -99,7 +99,7 @@ const FiscalNoteForm: React.FC = () => {
     try {
       // Tentar salvar explicitamente primeiro
       let customerSaved = false;
-    if (saveCustomerRef.current) {
+      if (saveCustomerRef.current) {
         try {
           await saveCustomerRef.current();
           customerSaved = true;
@@ -116,8 +116,8 @@ const FiscalNoteForm: React.FC = () => {
           name: customerData.name,
           phone: customerData.phone,
           address: customerData.address,
-          signature: customerData.signature,
-          ownerId: user.id
+          owner_id: user.id,
+          email: customerData.email
         });
 
         if (savedCustomer) {
@@ -132,6 +132,45 @@ const FiscalNoteForm: React.FC = () => {
       return false;
     }
   };
+  
+  // Função auxiliar para mapear os métodos de pagamento do formulário para a nota fiscal
+  const mapPaymentMethodToFiscalNote = (method: FormPaymentData['method']): FiscalNotePaymentData['method'] => {
+    switch (method) {
+      case 'credit': return 'credit';
+      case 'debit': return 'debit';
+      case 'pix': return 'pix';
+      case 'cash': return 'cash';
+      case 'check': return 'check';
+      case 'bank_transfer': return 'transfer';
+      case 'installment_plan':
+      case 'mobile_payment':
+      case 'money_order':
+      case 'voucher':
+      case 'other':
+      default:
+        return 'other';
+    }
+  };
+  
+  // Adicionar antes do handleSave:
+  function mapToServiceFiscalNote(note: any): any {
+    return {
+      id: note.id,
+      ownerId: note.ownerId,
+      customerId: note.customerId || '',
+      number: note.noteNumber || '',
+      series: note.series || '',
+      status: note.status,
+      total: note.totalValue,
+      createdAt: note.createdAt,
+      updatedAt: note.updatedAt,
+      printedAt: note.printedAt,
+      paidAt: note.paidAt,
+      dueDate: note.paymentData?.dueDate,
+      paymentMethod: note.paymentData?.method,
+      notes: note.notes || '',
+    };
+  }
   
   // Modificar a função handleSave para usar o NotesService
   const handleSave = async () => {
@@ -169,7 +208,7 @@ const FiscalNoteForm: React.FC = () => {
           email: customerData.email || undefined
         },
         paymentData: {
-          method: paymentData.method,
+          method: mapPaymentMethodToFiscalNote(paymentData.method),
           installments: paymentData.installments,
           dueDate: paymentData.dueDate || undefined,
           observation: paymentData.observation || undefined
@@ -183,8 +222,9 @@ const FiscalNoteForm: React.FC = () => {
         sellerName: user.user_metadata?.name || user.email
       };
       
-      // Salvar a nota no Supabase
-      const savedNote = await NotesService.saveNote(noteData);
+      // Adicionar antes de chamar NotesService.saveNote(noteData):
+      const serviceNote = mapToServiceFiscalNote(noteData);
+      const savedNote = await NotesService.saveNote(serviceNote);
       
       if (savedNote) {
     toast({
@@ -212,10 +252,9 @@ const FiscalNoteForm: React.FC = () => {
     }
   };
   
-  // Modificar a função handleUnifiedPrintLogic para manter compatibilidade com o tipo importado
+  // Modificar a função handleUnifiedPrintLogic para lidar corretamente com o retorno do PrintService
   const handleUnifiedPrintLogic = async () => {
     if (!noteId.current || !user) {
-      // Se não tivermos o ID da nota salva, não podemos prosseguir
       console.error("Erro: ID da nota não disponível");
       toast({ title: 'Erro de Sistema', description: 'ID da nota não disponível ou usuário não logado.', variant: 'error' });
       return false;
@@ -236,29 +275,24 @@ const FiscalNoteForm: React.FC = () => {
       })),
       customerData,
       paymentData: { 
-        method: paymentData.method, 
-        installments: paymentData.installments, 
-        // paid: paymentData.paid, // Adicionar se PaymentData suportar
+        method: mapPaymentMethodToFiscalNote(paymentData.method),
+        installments: paymentData.installments,
       },
       totalValue,
-      status: 'issued', // Ou o status que a nota realmente tem neste ponto
+      status: 'issued',
       sellerName: user.user_metadata?.name || user.email,
-      ownerId: user.id, // Adicionado para consistência com PrintRequest e FiscalNote
-      // Adicionar quaisquer outros campos de FiscalNote que sejam relevantes para a impressão.
+      ownerId: user.id,
     };
 
     if (isMobile) {
       toast({ title: 'Preparando impressão remota...', description: 'Enviando para a fila de impressão.' });
       try {
-        // Usando sendPrintRequest que é o método disponível no PrintService importado
-        const request = await PrintService.sendPrintRequest(noteId.current, noteDataForPrint, user.id);
-        if (request) {
-          toast({ title: 'Enviado para a Fila', description: `O pedido de impressão #${request.id} foi enviado.`, variant: 'success' });
-          // A nota fiscal em 'fiscal_notes' já foi marcada como 'issued'.
-          // O PrintService cuidará de marcar o 'print_request' como 'printed' quando a estação de impressão o fizer.
+        const result = await PrintService.sendPrintRequest(noteId.current, noteDataForPrint, user.id);
+        if (result.success) {
+          toast({ title: 'Enviado para a Fila', description: 'O pedido de impressão foi enviado.', variant: 'success' });
           return true;
         } else {
-          toast({ title: 'Falha ao Enviar', description: 'Não foi possível enviar o pedido para a fila de impressão.', variant: 'error' });
+          toast({ title: 'Falha ao Enviar', description: result.error || 'Não foi possível enviar o pedido para a fila de impressão.', variant: 'error' });
           return false;
         }
       } catch (error) {
@@ -266,23 +300,23 @@ const FiscalNoteForm: React.FC = () => {
         toast({ title: 'Erro de Rede', description: 'Falha ao comunicar com o serviço de impressão.', variant: 'error' });
         return false;
       }
-    } else { // Desktop
+    } else {
       toast({ title: 'Preparando impressão local...', description: 'A janela de impressão será aberta em breve.' });
-      // A função handlePrint (react-to-print) será chamada externamente após esta função retornar true.
-      // Ela já tem a lógica para, após a impressão, chamar NotesService.markAsPrinted.
-      
-      // TODO: Considerar enviar para PrintService.sendPrintRequest também no desktop
-      // para que uma estação de impressão dedicada (Print.tsx) sempre lide com a impressão física.
-      // Isso centralizaria a lógica de comunicação com a impressora.
-      // Exemplo:
-      // const request = await PrintService.sendPrintRequest(noteId.current, noteDataForPrint, user.id);
-      // if (request) { return true; } else { return false; }
-      return true; // Sinaliza que a impressão local pode prosseguir
+      return true;
     }
   };
   
+  // Configuração do useReactToPrint
   const handlePrint = useReactToPrint({
-    content: () => printableNoteRef.current,
+    documentTitle: `Nota Fiscal ${noteNumber.current}`,
+    contentRef: printableNoteRef,
+    onBeforePrint: () => {
+      return new Promise<void>((resolve) => {
+        if (printableNoteRef.current) {
+          resolve();
+        }
+      });
+    },
     onAfterPrint: async () => {
       if (noteId.current && user) {
         try {
@@ -302,6 +336,19 @@ const FiscalNoteForm: React.FC = () => {
         }
       }
     },
+    pageStyle: `
+      @media print {
+        @page { 
+          size: auto;
+          margin: 20mm;
+        }
+        body { 
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+      }
+    `,
+    suppressErrors: false
   });
 
   // Modificar a função handlePrintAfterSave para usar a lógica unificada
@@ -375,11 +422,6 @@ const FiscalNoteForm: React.FC = () => {
     // E mantendo o estado no componente pai (FiscalNoteForm)
     console.log(`Estado atual: ${products.length} produtos selecionados`);
   }, [products.length]);
-  
-  // Função para configurar o ref do Customer Form
-  const setupCustomerFormRef = (ref: () => void) => {
-    saveCustomerRef.current = ref;
-  };
   
   // Handle printing button based on device type
   const renderPrintButton = () => {
@@ -595,8 +637,9 @@ const FiscalNoteForm: React.FC = () => {
             {customerExpanded && (
               <div className="p-3">
                 <CustomerForm 
-                  onCustomerDataChange={setCustomerData} 
-                  onSaveRef={setupCustomerFormRef}
+                  initialCustomer={customerData}
+                  onSave={(customer: CustomerFormData) => setCustomerData(customer)}
+                  onCustomerSelect={(customer: CustomerFormData) => setCustomerData(customer)}
                 />
                 
                 <div className="mt-4 flex justify-between items-center border-t border-gray-100 pt-4">
@@ -697,8 +740,9 @@ const FiscalNoteForm: React.FC = () => {
               Dados do Cliente
             </h3>
             <CustomerForm 
-              onCustomerDataChange={setCustomerData} 
-              onSaveRef={setupCustomerFormRef}
+              initialCustomer={customerData}
+              onSave={(customer: CustomerFormData) => setCustomerData(customer)}
+              onCustomerSelect={(customer: CustomerFormData) => setCustomerData(customer)}
             />
           </div>
           

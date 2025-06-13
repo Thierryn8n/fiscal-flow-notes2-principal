@@ -1,17 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { CreditCard, Banknote, Receipt, Info, Landmark, BarChart3, Clock, Smartphone, CircleDollarSign, CreditCardIcon, Check, BanknoteIcon, QrCode } from 'lucide-react';
+import { CreditCard, Banknote, Info, Landmark, Clock, Smartphone, CircleDollarSign, CreditCardIcon, Check, BanknoteIcon, QrCode } from 'lucide-react';
 import { useDeviceDetect } from '@/hooks/useDeviceDetect';
 
 // Interface para as configurações de parcelas no crédito
 interface InstallmentFee {
   id: string;
   installments: number;
-  fee: number;
+  fee_percentage: number;
 }
 
 export interface PaymentData {
   total: number;
-  method: 'credit' | 'debit' | 'pix' | 'cash' | 'other' | 'bank_transfer' | 'store_credit' | 'installment_plan' | 'mobile_payment' | 'check' | 'money_order' | 'voucher';
+  method: 'credit' | 'debit' | 'pix' | 'cash' | 'other' | 'bank_transfer' | 'installment_plan' | 'mobile_payment' | 'check' | 'money_order' | 'voucher';
   installments: number;
   installmentValue?: number;
   appliedFee?: number;
@@ -61,7 +61,7 @@ const PaymentForm: React.FC<PaymentFormProps> = ({ totalValue, onPaymentDataChan
     if (paymentData.method === 'credit' && paymentData.installments > 1) {
       // Buscar a taxa configurada para o número de parcelas
       const feeConfig = installmentFees.find(fee => fee.installments === paymentData.installments);
-      const appliedFee = feeConfig ? feeConfig.fee : 0;
+      const appliedFee = feeConfig ? feeConfig.fee_percentage : 0;
       
       // Calcular o valor total com juros
       const totalWithFees = totalValue * (1 + appliedFee / 100);
@@ -116,8 +116,6 @@ const PaymentForm: React.FC<PaymentFormProps> = ({ totalValue, onPaymentDataChan
         return <QrCode size={isMobile ? 16 : 20} className="text-purple-600" />;
       case 'bank_transfer':
         return <Landmark size={isMobile ? 16 : 20} className="text-blue-800" />;
-      case 'store_credit':
-        return <BarChart3 size={isMobile ? 16 : 20} className="text-orange-600" />;
       case 'installment_plan':
         return <Clock size={isMobile ? 16 : 20} className="text-indigo-600" />;
       case 'mobile_payment':
@@ -141,7 +139,6 @@ const PaymentForm: React.FC<PaymentFormProps> = ({ totalValue, onPaymentDataChan
       'pix': 'PIX',
       'cash': 'Dinheiro',
       'bank_transfer': 'Transferência Bancária',
-      'store_credit': 'Crédito na Loja',
       'installment_plan': 'Crediário',
       'mobile_payment': 'Pagamento por Aplicativo',
       'check': 'Cheque',
@@ -158,7 +155,7 @@ const PaymentForm: React.FC<PaymentFormProps> = ({ totalValue, onPaymentDataChan
     return [...Array(12)].map((_, index) => {
       const installmentNumber = index + 1;
       const feeConfig = installmentFees.find(fee => fee.installments === installmentNumber);
-      const appliedFee = feeConfig ? feeConfig.fee : 0;
+      const appliedFee = feeConfig ? feeConfig.fee_percentage : 0;
       
       let optionText = '';
       let installmentValue = 0;
@@ -398,7 +395,7 @@ const PaymentForm: React.FC<PaymentFormProps> = ({ totalValue, onPaymentDataChan
           <div className="flex justify-between font-medium text-fiscal-green-900">
             <span className={isMobile ? 'text-sm' : ''}>Valor Total:</span>
             <span className={isMobile ? 'text-base' : 'text-lg'}>
-              R$ {paymentData.method === 'credit' && paymentData.installments > 1 && paymentData.appliedFee > 0 
+              R$ {paymentData.method === 'credit' && paymentData.installments > 1 && (paymentData.appliedFee || 0) > 0 
                 ? paymentData.totalWithFees?.toFixed(2) 
                 : totalValue.toFixed(2)}
             </span>
@@ -406,16 +403,16 @@ const PaymentForm: React.FC<PaymentFormProps> = ({ totalValue, onPaymentDataChan
 
           {paymentData.method === 'credit' && paymentData.installments > 1 && (
             <>
-              {paymentData.appliedFee > 0 && (
+              {(paymentData.appliedFee || 0) > 0 && (
                 <div className="flex justify-between text-xs text-fiscal-green-700 mt-1.5">
                   <span>Taxa aplicada:</span>
                   <span>{paymentData.appliedFee}%</span>
                 </div>
               )}
-            <div className="flex justify-between text-sm text-fiscal-green-700 mt-2 border-t border-fiscal-green-200 pt-2">
-              <span>{paymentData.installments}x de:</span>
+              <div className="flex justify-between text-sm text-fiscal-green-700 mt-2 border-t border-fiscal-green-200 pt-2">
+                <span>{paymentData.installments}x de:</span>
                 <span className="font-medium">R$ {paymentData.installmentValue?.toFixed(2)}</span>
-            </div>
+              </div>
             </>
           )}
           

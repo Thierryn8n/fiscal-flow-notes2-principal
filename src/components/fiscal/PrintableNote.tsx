@@ -1,4 +1,4 @@
-import React, { forwardRef, useEffect, useState } from 'react';
+import { forwardRef, useEffect, useState } from 'react';
 import { SelectedProduct } from './ProductSelector';
 import { CustomerData } from './CustomerForm';
 import { PaymentData } from './PaymentForm';
@@ -185,22 +185,22 @@ const PrintableNote = forwardRef<HTMLDivElement, PrintableNoteProps>(
           )}
         </div>
 
-        {/* Signature */}
-        <div className={`${isMobile ? 'mt-8' : 'mt-12'} flex flex-col items-center`}>
-          {customerData.signature ? (
-            <div className="mb-2">
-              <img src={customerData.signature} alt="Assinatura do Cliente" className="max-h-20" />
-            </div>
-          ) : (
-            <div className="mb-2 border-b border-black w-64"></div>
-          )}
-          <p className="text-sm">Assinatura do Cliente</p>
-        </div>
-
         {/* Footer */}
-        <div className={`${isMobile ? 'mt-8' : 'mt-12'} text-center text-sm text-fiscal-gray-500`}>
-          <p>Este documento não possui valor fiscal.</p>
-          <p>Orçamento válido por 7 dias.</p>
+        <div className="mt-8 flex flex-col items-center">
+          {/* Date */}
+          <div className="text-sm text-gray-600 mb-4">
+            {new Date().toLocaleDateString('pt-BR')}
+          </div>
+
+          {/* Signature Lines */}
+          <div className="flex justify-between w-full mt-8">
+            <div className="flex-1 text-center border-t border-gray-300 pt-2 mx-4">
+              <p className="text-sm text-gray-600">Assinatura do Cliente</p>
+            </div>
+            <div className="flex-1 text-center border-t border-gray-300 pt-2 mx-4">
+              <p className="text-sm text-gray-600">Assinatura do Vendedor</p>
+            </div>
+          </div>
         </div>
       </div>
     );

@@ -11,18 +11,6 @@ import CsvHelpDialog from '@/components/CsvHelpDialog';
 import { useSessionRefresh } from '@/hooks/useSessionRefresh';
 
 // Definição dos tipos do Supabase
-interface Database {
-  public: {
-    Tables: {
-      products: {
-        Row: Product;
-        Insert: ProductInsert;
-        Update: ProductUpdate;
-      };
-    };
-  };
-}
-
 interface Product {
   id: string;
   name: string;
@@ -247,9 +235,9 @@ const ProductManagement: React.FC = () => {
       try {
         setIsLoading(true);
         const productsToInsert: ProductInsert[] = result.products.map((p: CsvProductData) => ({
-          name: p.name,
+            name: p.name,
           code: p.code || `IMP-${Date.now()}`.slice(0, 9),
-          price: p.price,
+            price: p.price,
           description: null,
           ncm: p.ncm || null,
           unit: p.unit || 'UN',
@@ -261,11 +249,11 @@ const ProductManagement: React.FC = () => {
           category_id: null
         }));
         
-        const { data, error } = await supabase
+            const { data, error } = await supabase
           .from('products')
           .insert(productsToInsert)
-          .select();
-
+              .select();
+              
         if (error) throw error;
         
         setProducts(prev => [...prev, ...(data as Product[])]);
@@ -292,10 +280,10 @@ const ProductManagement: React.FC = () => {
               <div className="relative group">
                 <label htmlFor="csvImport" className={`btn-secondary rounded-full flex items-center px-5 cursor-pointer ${isLoading ? 'opacity-50' : ''}`}>
                   <Upload size={18} className="mr-1" /> Importar CSV
-                </label>
+              </label>
                 <input type="file" id="csvImport" accept=".csv" className="hidden" onChange={handleCSVImport} disabled={isLoading} />
                 <div className="absolute right-0 mt-2 hidden group-hover:block"><CsvHelpDialog trigger={<button className="flex items-center text-sm p-1"><HelpCircle size={14} /></button>} /></div>
-              </div>
+                </div>
               <button onClick={() => openModal(null)} className="btn-primary rounded-full flex items-center px-5" disabled={isLoading}>
                 <Plus size={18} className="mr-1" /> Novo Produto
               </button>
@@ -316,7 +304,7 @@ const ProductManagement: React.FC = () => {
                 <div><label htmlFor="ncm" className="block text-sm font-medium mb-1">NCM</label><input id="ncm" name="ncm" value={getSafeValue(formData.ncm, '')} onChange={handleFormChange} className={inputStyles} maxLength={9} /></div>
                 <div><label htmlFor="unit" className="block text-sm font-medium mb-1">Unidade</label><input id="unit" name="unit" value={getSafeValue(formData.unit, 'UN')} onChange={handleFormChange} className={inputStyles} maxLength={9} /></div>
                 <div><label htmlFor="quantity" className="block text-sm font-medium mb-1">Quantidade</label><input type="number" id="quantity" name="quantity" value={getSafeValue(formData.quantity, 0)} onChange={handleFormChange} className={inputStyles} /></div>
-              </div>
+                </div>
               <div><label htmlFor="description" className="block text-sm font-medium mb-1">Descrição</label><textarea id="description" name="description" value={getSafeValue(formData.description, '')} onChange={handleFormChange} className={inputStyles} rows={3}></textarea></div>
               <div><label htmlFor="image_path" className="block text-sm font-medium mb-1">URL da Imagem</label><input type="url" id="image_path" name="image_path" value={getSafeValue(formData.image_path, '')} onChange={handleFormChange} className={inputStyles} /></div>
               <ProductDialogFooter>
@@ -331,17 +319,17 @@ const ProductManagement: React.FC = () => {
           <div className="relative mb-4">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input type="text" placeholder="Buscar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full py-2 pl-10 pr-4 rounded-full border focus:ring-fiscal-green-500" />
-          </div>
-          
+                </div>
+                
           {isLoading ? <div className="text-center p-10">Carregando...</div> :
            filteredProducts.length === 0 ? <div className="text-center p-10 text-gray-500">Nenhum produto encontrado.</div> : (
-            <>
+              <>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {currentProducts.map(product => (
+                  {currentProducts.map(product => (
                   <div key={product.id} className="border rounded-xl p-4 flex items-start space-x-4">
                     <div className="flex-shrink-0 w-14 h-14 bg-gray-100 rounded-md flex items-center justify-center">
                       {product.image_path ? <img src={product.image_path} alt={product.name} className="w-full h-full object-cover rounded-md"/> : <Image size={24} className="text-gray-400"/>}
-                    </div>
+                  </div>
                     <div className="flex-1">
                       <h4 className="font-semibold truncate">{product.name}</h4>
                       <p className="text-sm text-gray-500"><Tag size={14} className="inline mr-1"/>{product.code}</p>
@@ -354,13 +342,13 @@ const ProductManagement: React.FC = () => {
                   </div>
                 ))}
               </div>
-              {totalPages > 1 && (
-                <div className="flex justify-center items-center mt-6 space-x-2">
+                {totalPages > 1 && (
+                  <div className="flex justify-center items-center mt-6 space-x-2">
                   <button onClick={() => setCurrentPage(p => Math.max(p - 1, 1))} disabled={currentPage === 1} className="p-2 disabled:text-gray-300"><ChevronLeft size={20} /></button>
                   <span>{currentPage} / {totalPages}</span>
                   <button onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))} disabled={currentPage === totalPages} className="p-2 disabled:text-gray-300"><ChevronRight size={20} /></button>
-                </div>
-              )}
+                  </div>
+                )}
             </>
           )}
         </div>

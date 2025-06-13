@@ -1,20 +1,9 @@
-import { supabase } from '@/integrations/supabase/client';
 import { FiscalNote } from '@/types/FiscalNote';
-import { v4 as uuidv4 } from 'uuid';
-
-interface ThumbnailData {
-  noteId: string;
-  dataUrl: string;
-  createdAt: string;
-  updatedAt: string;
-}
 
 /**
  * Serviço para gerenciar miniaturas de pré-visualização das notas fiscais
  */
 export class ThumbnailService {
-  private static readonly STORAGE_BUCKET = 'note-thumbnails';
-  private static readonly TABLE_NAME = 'note_thumbnails';
   private static readonly LOCAL_STORAGE_PREFIX = 'fiscal_flow_thumbnail_';
 
   /**

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
-import { Users, Plus, Trash2, MapPin, Search, Phone, User, Save, X, Info } from 'lucide-react';
+import { Users, Plus, Trash2, MapPin, Search, Phone, Save, X, Info } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface Customer {

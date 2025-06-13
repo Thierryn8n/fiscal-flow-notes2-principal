@@ -1,41 +1,13 @@
-import { supabase } from '@/integrations/supabase/client';
-import type { Database } from '@/types/supabase';
-
-type Tables = Database['public']['Tables'];
-type CustomerRow = Tables['customers']['Row'];
-type CustomerAddress = Database['public']['Tables']['customers']['Row']['address'];
+import { Customer, CustomerFormData, CustomerDB } from '@/types/Customer';
+import { supabase } from '@/lib/supabaseClient';
+import { Database } from '@/types/supabase';
+import { executeWithTokenRefresh, isJwtExpiredError } from '@/utils/auth-helpers';
+import { Json } from '@/types/supabase';
 
 /* 
  * Serviço de Clientes - Parte do sistema Fiscal Flow
  * Visual de grade (grid lines) aplicado nas páginas para melhor organização visual
  */
-export interface ICustomerAddress {
-  street: string;
-  number: string;
-  complement?: string;
-  neighborhood: string;
-  city: string;
-  state: string;
-  zipcode: string;
-}
-
-export interface ICustomer {
-  id: string;
-  name: string;
-  phone: string;
-  email: string | null;
-  address: ICustomerAddress | null;
-  signature: string | null;
-  owner_id: string;
-  created_at: string | null;
-  updated_at: string | null;
-}
-
-export interface CustomerFilters {
-  page?: number;
-  pageSize?: number;
-  searchTerm?: string;
-}
 
 export interface PaginatedResponse<T> {
   data: T[];
@@ -47,125 +19,215 @@ export interface PaginatedResponse<T> {
   };
 }
 
-const mapCustomerAddress = (address: CustomerAddress): ICustomerAddress | null => {
-  if (!address || typeof address !== 'object') return null;
-  
-  const typedAddress = address as Record<string, string>;
+// Função para mapear os dados do banco para o tipo Customer
+function mapDBToCustomer(dbCustomer: CustomerDB): Customer {
   return {
-    street: typedAddress.street || '',
-    number: typedAddress.number || '',
-    complement: typedAddress.complement,
-    neighborhood: typedAddress.neighborhood || '',
-    city: typedAddress.city || '',
-    state: typedAddress.state || '',
-    zipcode: typedAddress.zipcode || ''
+    ...dbCustomer,
+    address: dbCustomer.address as unknown as Customer['address']
   };
-};
+}
 
-const mapCustomerFromSupabase = (data: CustomerRow): ICustomer => ({
-  id: data.id,
-  name: data.name,
-  phone: data.phone,
-  email: data.email,
-  address: mapCustomerAddress(data.address),
-  signature: data.signature,
-  owner_id: data.owner_id,
-  created_at: data.created_at,
-  updated_at: data.updated_at
-});
+// Função para mapear os dados do formulário para o tipo do banco
+function mapFormToDB(formData: Omit<CustomerFormData, 'id'>, owner_id: string): Omit<CustomerDB, 'id' | 'created_at' | 'updated_at'> {
+  return {
+    ...formData,
+    email: formData.email || null,
+    signature: null,
+    owner_id,
+    address: formData.address as unknown as Json
+  };
+}
 
-export class CustomersService {
-  private static readonly CUSTOMERS_TABLE = 'customers';
+export const CustomersService = {
+  CUSTOMERS_TABLE: 'customers',
 
-  static async getCustomers(ownerId: string, filters?: CustomerFilters): Promise<ICustomer[]> {
-    let query = supabase
-      .from(this.CUSTOMERS_TABLE)
-      .select('*')
-      .eq('owner_id', ownerId);
+  async getCustomers(page: number = 1, pageSize: number = 10, searchTerm: string = ''): Promise<{ customers: Customer[], count: number }> {
+    try {
+      let query = supabase
+        .from(this.CUSTOMERS_TABLE)
+        .select('*', { count: 'exact' });
 
-    if (filters?.searchTerm) {
-      query = query.or(`name.ilike.%${filters.searchTerm}%,phone.ilike.%${filters.searchTerm}%`);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      throw error;
-    }
-
-    return (data as CustomerRow[]).map(mapCustomerFromSupabase);
-  }
-
-  static async getCustomer(id: string): Promise<ICustomer | null> {
-    const { data, error } = await supabase
-      .from(this.CUSTOMERS_TABLE)
-      .select('*')
-      .eq('id', id)
-      .single();
-
-    if (error) {
-      if (error.code === 'PGRST116') {
-        return null;
+      if (searchTerm) {
+        query = query.or(`name.ilike.%${searchTerm}%,phone.ilike.%${searchTerm}%,address->city.ilike.%${searchTerm}%`);
       }
+
+      const { data: customersData, count, error } = await query
+        .range((page - 1) * pageSize, page * pageSize - 1)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Mapear os dados do cliente para garantir a tipagem correta
+      const customers = (customersData as CustomerDB[])?.map(mapDBToCustomer);
+
+      return {
+        customers,
+        count: count || 0
+      };
+    } catch (error) {
+      console.error('Erro ao buscar clientes:', error);
       throw error;
     }
+  },
 
-    return data ? mapCustomerFromSupabase(data) : null;
-  }
+  async searchCustomers(searchTerm: string): Promise<Customer[]> {
+    try {
+      const { data, error } = await supabase
+        .from(this.CUSTOMERS_TABLE)
+        .select('*')
+        .or(`name.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%,phone.ilike.%${searchTerm}%`)
+        .limit(10);
 
-  static async createCustomer(customerData: Omit<ICustomer, 'id' | 'created_at' | 'updated_at'>): Promise<ICustomer> {
-    const supabaseData = {
-      name: customerData.name,
-      phone: customerData.phone,
-      email: customerData.email,
-      address: customerData.address as CustomerAddress,
-      signature: customerData.signature,
-      owner_id: customerData.owner_id
-    };
+      if (error) {
+        if (isJwtExpiredError(error)) {
+          return await executeWithTokenRefresh(() => this.searchCustomers(searchTerm)) || [];
+        }
+        throw error;
+      }
 
-    const { data, error } = await supabase
-      .from(this.CUSTOMERS_TABLE)
-      .insert([supabaseData])
-      .select()
-      .single();
-
-    if (error) {
+      return (data || []).map(mapDBToCustomer);
+    } catch (error) {
+      console.error('Erro ao buscar clientes:', error);
       throw error;
     }
+  },
 
-    return mapCustomerFromSupabase(data);
-  }
+  async saveCustomer(customerData: CustomerFormData): Promise<Customer> {
+    try {
+      const { id, owner_id, ...customerWithoutId } = customerData;
+      
+      // Preparar dados para salvar no banco
+      const customerToSave = mapFormToDB(customerWithoutId, owner_id || '');
 
-  static async updateCustomer(id: string, customerData: Partial<ICustomer>): Promise<ICustomer> {
-    const supabaseData = {
-      ...(customerData.name && { name: customerData.name }),
-      ...(customerData.phone && { phone: customerData.phone }),
-      ...(customerData.email !== undefined && { email: customerData.email }),
-      ...(customerData.address !== undefined && { address: customerData.address as CustomerAddress }),
-      ...(customerData.signature !== undefined && { signature: customerData.signature })
-    };
+      if (id) {
+        // Atualizar cliente existente
+        const { data, error } = await supabase
+          .from(this.CUSTOMERS_TABLE)
+          .update(customerToSave)
+          .eq('id', id)
+          .select()
+          .single();
 
-    const { data, error } = await supabase
-      .from(this.CUSTOMERS_TABLE)
-      .update(supabaseData)
-      .eq('id', id)
-      .select()
-      .single();
+        if (error) throw error;
+        return mapDBToCustomer(data as CustomerDB);
+      } else {
+        // Criar novo cliente
+        const { data, error } = await supabase
+          .from(this.CUSTOMERS_TABLE)
+          .insert([customerToSave])
+          .select()
+          .single();
 
-    if (error) {
+        if (error) throw error;
+        return mapDBToCustomer(data as CustomerDB);
+      }
+    } catch (error) {
+      console.error('Erro ao salvar cliente:', error);
       throw error;
     }
+  },
 
-    return mapCustomerFromSupabase(data);
-  }
+  async findOrCreateCustomer(customerData: Partial<Customer>): Promise<Customer> {
+    try {
+      // Primeiro tenta encontrar o cliente
+      const { data: existingCustomers, error: searchError } = await supabase
+        .from(this.CUSTOMERS_TABLE)
+        .select('*')
+        .eq('phone', customerData.phone)
+        .limit(1);
 
-  static async deleteCustomer(id: string): Promise<void> {
-    const { error } = await supabase
-      .from(this.CUSTOMERS_TABLE)
-      .delete()
-      .eq('id', id);
+      if (searchError) {
+        if (isJwtExpiredError(searchError)) {
+          const result = await executeWithTokenRefresh(() => this.findOrCreateCustomer(customerData));
+          if (!result) throw new Error('Falha ao buscar/criar cliente após renovação do token');
+          return result;
+        }
+        throw searchError;
+      }
 
-    if (error) {
+      // Se encontrou, retorna o primeiro
+      if (existingCustomers && existingCustomers.length > 0) {
+        return mapDBToCustomer(existingCustomers[0]);
+      }
+
+      // Se não encontrou, cria um novo
+      const { data: newCustomer, error: createError } = await supabase
+        .from(this.CUSTOMERS_TABLE)
+        .insert([customerData])
+        .select()
+        .single();
+
+      if (createError) {
+        if (isJwtExpiredError(createError)) {
+          const result = await executeWithTokenRefresh(() => this.findOrCreateCustomer(customerData));
+          if (!result) throw new Error('Falha ao criar cliente após renovação do token');
+          return result;
+        }
+        throw createError;
+      }
+
+      if (!newCustomer) throw new Error('Nenhum dado retornado ao criar cliente');
+      return mapDBToCustomer(newCustomer);
+    } catch (error) {
+      console.error('Erro ao buscar/criar cliente:', error);
+      throw error;
+    }
+  },
+
+  async updateCustomer(id: string, customer: Partial<Customer>): Promise<Customer> {
+    try {
+      const { data, error } = await supabase
+        .from(this.CUSTOMERS_TABLE)
+        .update(customer)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) {
+        if (isJwtExpiredError(error)) {
+          const result = await executeWithTokenRefresh(() => this.updateCustomer(id, customer));
+          if (!result) throw new Error('Falha ao atualizar cliente após renovação do token');
+          return result;
+        }
+        throw error;
+      }
+
+      if (!data) throw new Error('Nenhum dado retornado ao atualizar cliente');
+      return mapDBToCustomer(data as CustomerDB);
+    } catch (error) {
+      console.error('Erro ao atualizar cliente:', error);
+      throw error;
+    }
+  },
+
+  async deleteCustomer(id: string): Promise<void> {
+    try {
+      const { error } = await supabase
+        .from(this.CUSTOMERS_TABLE)
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Erro ao excluir cliente:', error);
+      throw error;
+    }
+  },
+
+  async getCustomerById(id: string): Promise<Customer | null> {
+    try {
+      const { data, error } = await supabase
+        .from(this.CUSTOMERS_TABLE)
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (error) throw error;
+      if (!data) return null;
+
+      return mapDBToCustomer(data as CustomerDB);
+    } catch (error) {
+      console.error('Erro ao buscar cliente:', error);
       throw error;
     }
   }

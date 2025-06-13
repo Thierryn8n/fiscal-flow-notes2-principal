@@ -12,6 +12,8 @@ import { SelectedProduct } from '@/components/fiscal/ProductSelector';
 import { PaymentData } from '@/components/fiscal/PaymentForm';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import CustomerForm from '@/components/fiscal/CustomerForm';
+import { CustomerData } from '@/components/fiscal/CustomerForm';
 
 const ViewNote: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -21,6 +23,7 @@ const ViewNote: React.FC = () => {
   const [note, setNote] = useState<FiscalNote | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const printableNoteRef = useRef<HTMLDivElement>(null);
+  const [isPrinting, setIsPrinting] = useState(false);
 
   useEffect(() => {
     const fetchNote = async () => {
@@ -57,24 +60,21 @@ const ViewNote: React.FC = () => {
 
   // Função de impressão
   const handlePrint = useReactToPrint({
-    content: () => printableNoteRef.current,
-    documentTitle: note ? `Orçamento ${note.noteNumber}` : 'Orçamento',
+    documentTitle: 'Nota Fiscal',
     onBeforeGetContent: () => {
-      return new Promise<void>((resolve) => {
-        resolve();
-      });
+      setIsPrinting(true);
     },
     onAfterPrint: () => {
-      toast({
-        title: 'Impressão concluída',
-        description: 'O orçamento foi enviado para a impressora.',
-      });
-      
-      // Marcar como impressa após a impressão bem-sucedida
-      if (note?.id && user) {
-        NotesService.markAsPrinted(note.id, user.id);
+      setIsPrinting(false);
+    },
+    pageStyle: `
+      @page {
+        size: A4;
+        margin: 20mm;
       }
-    }
+    `,
+    removeAfterPrint: true,
+    ref: printableNoteRef
   });
 
   const handleEdit = () => {
@@ -112,6 +112,10 @@ const ViewNote: React.FC = () => {
       installmentValue: note ? note.totalValue / notePaymentData.installments : 0,
       totalWithFees: note ? note.totalValue : 0
     };
+  };
+
+  const handleCustomerChange = (data: any) => {
+    // Handle customer data change
   };
 
   if (isLoading) {
@@ -221,6 +225,17 @@ const ViewNote: React.FC = () => {
             customerData={note.customerData}
             paymentData={printablePaymentData}
             totalValue={note.totalValue}
+          />
+
+          <CustomerForm
+            customerData={{
+              ...note.customerData,
+              email: note.customerData.email || '',
+              phone: note.customerData.phone || '',
+              address: note.customerData.address || ''
+            }}
+            onChange={handleCustomerChange}
+            readOnly={true}
           />
         </div>
       </div>

@@ -227,8 +227,8 @@ export const uploadFile = async (
             sucesso: !serviceResult.error,
             dados: serviceResult.data,
             erro: serviceResult.error ? {
-              message: serviceResult.error.message || 'Erro desconhecido',
-              codigo: typeof serviceResult.error === 'object' ? JSON.stringify(serviceResult.error) : String(serviceResult.error)
+              message: serviceResult.error?.message || 'Erro desconhecido',
+              codigo: serviceResult.error ? JSON.stringify(serviceResult.error) : 'Erro desconhecido'
             } : null
           });
           
@@ -356,4 +356,50 @@ export const getFileNameFromUrl = (url: string): string | null => {
     console.error('URL inválida:', error);
     return null;
   }
+};
+
+// Interface para resultados de serviço
+interface ServiceResult {
+  success: boolean;
+  error?: string;
+  code?: string;
+}
+
+// Função auxiliar para tratar erros de serviço
+const handleServiceError = (error: unknown): ServiceResult => {
+  if (error instanceof Error) {
+    return {
+      success: false,
+      error: error.message,
+      code: error.name
+    };
+  }
+  return {
+    success: false,
+    error: String(error),
+    code: 'UNKNOWN_ERROR'
+  };
+}; 
+
+// Interface para resultados de serviço
+interface ServiceResult {
+  success: boolean;
+  error?: string;
+  code?: string;
+}
+
+// Função auxiliar para tratar erros de serviço
+const handleServiceError = (error: unknown): ServiceResult => {
+  if (error instanceof Error) {
+    return {
+      success: false,
+      error: error.message,
+      code: error.name
+    };
+  }
+  return {
+    success: false,
+    error: String(error),
+    code: 'UNKNOWN_ERROR'
+  };
 }; 

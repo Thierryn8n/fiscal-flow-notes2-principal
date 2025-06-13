@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { GoogleMap, Circle, Marker, useJsApiLoader } from '@react-google-maps/api';
-import { MapPin, AlertCircle, Map } from 'lucide-react';
+import { AlertCircle, Map } from 'lucide-react';
 
 // Tipos para as propriedades do componente
 interface DeliveryRadius {

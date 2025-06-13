@@ -1,19 +1,14 @@
-import { supabase } from './supabaseClient';
+import { supabase } from '@/integrations/supabase/client';
 import { v4 as uuidv4 } from 'uuid';
-import { executeWithTokenRefresh, isJwtExpiredError, refreshAuthSession } from '@/utils/auth-helpers';
+import { executeWithTokenRefresh, isJwtExpiredError } from '@/utils/auth-helpers';
+import { UserSettings } from '@/types/settings';
+import { Database } from '@/types/supabase';
+
+type DbUserSettings = Database['public']['Tables']['user_settings'];
+type UserSettingsRow = DbUserSettings['Row'];
+type UserSettingsInsert = DbUserSettings['Insert'];
 
 // Interfaces para as configurações de usuário
-export interface UserSettings {
-  id?: string;
-  user_id: string;
-  company_data: CompanyData;
-  installment_fees: InstallmentFee[];
-  delivery_settings: DeliverySettings;
-  printer_settings: PrinterSettings;
-  created_at?: string;
-  updated_at?: string;
-}
-
 export interface CompanyData {
   name: string;
   cnpj: string;
@@ -30,7 +25,7 @@ export interface CompanyData {
 
 export interface InstallmentFee {
   installments: number;
-  percentage: number;
+  fee_percentage: number;
 }
 
 export interface DeliverySettings {
@@ -48,8 +43,6 @@ export interface PrinterSettings {
   auto_print: boolean;
 }
 
-// Nome da tabela no Supabase
-const TABLE_NAME = 'user_settings';
 // Nome do bucket para armazenar logos
 const LOGO_BUCKET = 'company_logos';
 
@@ -58,33 +51,39 @@ const LOGO_BUCKET = 'company_logos';
  * @param userId ID do usuário
  * @returns Configurações do usuário ou uma configuração padrão se não existir
  */
-export async function loadSettings(userId: string): Promise<UserSettings> {
+export async function loadSettings(userId: string): Promise<UserSettings | null> {
   try {
-    const loadSettingsOperation = async () => {
-      const { data, error } = await supabase
-        .from(TABLE_NAME)
-        .select('*')
-        .eq('user_id', userId)
-        .single();
+    const { data, error } = await supabase
+      .from('user_settings')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
 
-      if (error) {
-        // Se for erro de JWT expirado, indicar para o executeWithTokenRefresh
-        if (isJwtExpiredError(error)) {
-          throw error;
-        }
-        console.error('Erro ao carregar configurações:', error);
-        return getDefaultSettings(userId);
+    if (error) {
+      if (isJwtExpiredError(error)) {
+        return await executeWithTokenRefresh(() => loadSettings(userId));
       }
+      throw error;
+    }
 
-      return data as UserSettings;
+    if (!data) {
+      return null;
+    }
+
+    const row = data as unknown as UserSettingsRow;
+    return {
+      id: row.id,
+      user_id: row.user_id,
+      company_data: row.company_data,
+      printer_settings: row.printer_settings,
+      delivery_settings: row.delivery_settings,
+      installment_fees: row.installment_fees,
+      created_at: row.created_at || undefined,
+      updated_at: row.updated_at || undefined
     };
-
-    // Executa com renovação de token automática se necessário
-    const result = await executeWithTokenRefresh(loadSettingsOperation);
-    return result || getDefaultSettings(userId);
   } catch (error) {
     console.error('Erro ao carregar configurações:', error);
-    return getDefaultSettings(userId);
+    throw error;
   }
 }
 
@@ -93,56 +92,35 @@ export async function loadSettings(userId: string): Promise<UserSettings> {
  * @param settings Configurações do usuário
  * @returns Status da operação
  */
-export async function saveSettings(settings: UserSettings): Promise<{ success: boolean; error?: string }> {
+export async function saveSettings(settings: UserSettings): Promise<void> {
   try {
-    const saveSettingsOperation = async () => {
-      // Verificar se as configurações já existem
-      const { data: existingSettings } = await supabase
-        .from(TABLE_NAME)
-        .select('id')
-        .eq('user_id', settings.user_id)
-        .single();
-
-      let result;
-      
-      if (existingSettings) {
-        // Atualizar configurações existentes
-        result = await supabase
-          .from(TABLE_NAME)
-          .update({
-            ...settings,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existingSettings.id);
-      } else {
-        // Criar novas configurações
-        result = await supabase
-          .from(TABLE_NAME)
-          .insert({
-            ...settings,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          });
-      }
-
-      if (result.error) {
-        // Se for erro de JWT expirado, indicar para o executeWithTokenRefresh
-        if (isJwtExpiredError(result.error)) {
-          throw result.error;
-        }
-        console.error('Erro ao salvar configurações:', result.error);
-        return { success: false, error: result.error.message };
-      }
-
-      return { success: true };
+    const insertData: UserSettingsInsert = {
+      user_id: settings.user_id,
+      company_data: settings.company_data,
+      printer_settings: settings.printer_settings,
+      delivery_settings: settings.delivery_settings,
+      installment_fees: settings.installment_fees,
+      updated_at: new Date().toISOString()
     };
 
-    // Executa com renovação de token automática se necessário
-    const result = await executeWithTokenRefresh(saveSettingsOperation);
-    return result || { success: false, error: 'Erro na operação após renovação da sessão' };
-  } catch (error: any) {
+    if (settings.id) {
+      insertData.id = settings.id;
+    }
+
+    const { error } = await supabase
+      .from('user_settings')
+      .upsert(insertData);
+
+    if (error) {
+      if (isJwtExpiredError(error)) {
+        await executeWithTokenRefresh(() => saveSettings(settings));
+        return;
+      }
+      throw error;
+    }
+  } catch (error) {
     console.error('Erro ao salvar configurações:', error);
-    return { success: false, error: error.message || 'Erro desconhecido' };
+    throw error;
   }
 }
 
@@ -241,34 +219,4 @@ export async function removeCompanyLogo(filePath: string): Promise<boolean> {
     console.error('Erro ao remover logo:', error);
     return false;
   }
-}
-
-/**
- * Obtém as configurações padrão para um usuário
- * @param userId ID do usuário
- * @returns Configurações padrão
- */
-function getDefaultSettings(userId: string): UserSettings {
-  return {
-    user_id: userId,
-    company_data: {
-      name: '',
-      cnpj: '',
-      address: '',
-      neighborhood: '',
-      city: '',
-      state: '',
-      zipCode: '',
-      phone: '',
-      email: ''
-    },
-    installment_fees: [],
-    delivery_settings: {
-      delivery_radii: []
-    },
-    printer_settings: {
-      default_printer: '',
-      auto_print: false
-    }
-  };
 } 

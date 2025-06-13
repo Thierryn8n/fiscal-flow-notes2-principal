@@ -1,12 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Minus, Search, ShoppingCart, Package, Trash2, Tag, Image, Edit, X, Check, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { Plus, Minus, Search, ShoppingCart, Package, Trash2, Tag, Image, Edit, Check, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useDeviceDetect } from '@/hooks/useDeviceDetect';
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { cn } from "@/lib/utils";
-import { EcommerceService } from '@/services/ecommerceService';
+import { ProductsService } from '@/services/productsService';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NoteProduct } from '@/types/FiscalNote';
 
 export interface Product {
   id: string;
@@ -30,46 +35,14 @@ interface ProductSelectorProps {
 
 // Modal/Dialog components
 const EditProductDialog = DialogPrimitive.Root;
-const EditProductDialogTrigger = DialogPrimitive.Trigger;
 const EditProductDialogPortal = DialogPrimitive.Portal;
 const EditProductDialogClose = DialogPrimitive.Close;
 
-const EditProductDialogOverlay = React.forwardRef<
-  React.ElementRef<typeof DialogPrimitive.Overlay>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>
->(({ className, ...props }, ref) => (
-  <DialogPrimitive.Overlay
-    ref={ref}
-    className={cn(
-      "fixed inset-0 z-50 bg-black/50 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
-      className
-    )}
-    {...props}
-  />
-));
-
-const EditProductDialogContent = React.forwardRef<
-  React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => (
-  <EditProductDialogPortal>
-    <EditProductDialogOverlay />
-    <DialogPrimitive.Content
-      ref={ref}
-      className={cn(
-        "fixed left-[50%] top-[50%] z-50 grid w-full max-w-md translate-x-[-50%] translate-y-[-50%] gap-4 border bg-white p-6 shadow-lg duration-200 rounded-xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]",
-        className
-      )}
-      {...props}
-    >
-      {children}
-      <DialogPrimitive.Close className="absolute right-4 top-4 rounded-full p-2 bg-gray-100 opacity-70 hover:opacity-100 hover:bg-gray-200 transition-all">
-        <X className="h-4 w-4" />
-        <span className="sr-only">Fechar</span>
-      </DialogPrimitive.Close>
-    </DialogPrimitive.Content>
-  </EditProductDialogPortal>
-));
+const EditProductDialogOverlay = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => (
+    <div ref={ref} className={className} {...props} />
+  )
+);
 
 // Component for displaying the dialog header
 const EditProductDialogHeader = ({
@@ -99,29 +72,17 @@ const EditProductDialogFooter = ({
   />
 );
 
-// Component for dialog title
-const EditProductDialogTitle = React.forwardRef<
-  React.ElementRef<typeof DialogPrimitive.Title>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>
->(({ className, ...props }, ref) => (
-  <DialogPrimitive.Title
-    ref={ref}
-    className={cn("text-lg font-semibold text-gray-900", className)}
-    {...props}
-  />
-));
+const EditProductDialogContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => (
+    <div ref={ref} className={className} {...props} />
+  )
+);
 
-// Component for dialog description
-const EditProductDialogDescription = React.forwardRef<
-  React.ElementRef<typeof DialogPrimitive.Description>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description>
->(({ className, ...props }, ref) => (
-  <DialogPrimitive.Description
-    ref={ref}
-    className={cn("text-sm text-gray-500", className)}
-    {...props}
-  />
-));
+const EditProductDialogTitle = React.forwardRef<HTMLHeadingElement, React.HTMLAttributes<HTMLHeadingElement>>(
+  ({ className, ...props }, ref) => (
+    <h2 ref={ref} className={className} {...props} />
+  )
+);
 
 const ProductSelector: React.FC<ProductSelectorProps> = ({ onProductsChange, initialSelectedProducts = [] }) => {
   const { toast } = useToast();
@@ -152,17 +113,17 @@ const ProductSelector: React.FC<ProductSelectorProps> = ({ onProductsChange, ini
 
         console.log("Iniciando carregamento de todos os produtos...");
         // Usando -1 como limite para buscar todos os produtos de uma vez
-        const { data: productsData } = await EcommerceService.getProducts(1, -1, '', '', user.id);
+        const { products: productsData } = await ProductsService.getUserProducts(user.id);
         
         // Mapear os produtos para o formato necessário
-        const mappedProducts: Product[] = productsData.map(p => ({
-          id: p.id,
-          name: p.name,
-          code: p.code,
-          price: p.price,
-          description: p.description,
-          imageUrl: p.imageUrl,
-          unit: p.unit || 'UN'
+        const mappedProducts: Product[] = productsData.map(product => ({
+          id: product.id,
+          name: product.name,
+          code: product.code,
+          price: product.price,
+          description: product.description || undefined,
+          imageUrl: product.imageUrl || undefined,
+          unit: product.unit || 'UN'
         }));
 
         console.log(`Carregados ${mappedProducts.length} produtos totais`);
@@ -198,7 +159,7 @@ const ProductSelector: React.FC<ProductSelectorProps> = ({ onProductsChange, ini
   }, [initialSelectedProducts]);
 
   // Otimização para busca de produtos - usar useMemo para evitar recálculos desnecessários
-  const filteredProducts = React.useMemo(() => 
+  const filteredProducts = useMemo(() => 
     products.filter(product => 
       product.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
       product.code.toLowerCase().includes(searchTerm.toLowerCase())

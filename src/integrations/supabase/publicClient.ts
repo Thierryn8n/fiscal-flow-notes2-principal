@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
+import { supabase } from './client';
 
 // Obtém as variáveis de ambiente
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -127,9 +128,29 @@ export async function getPublicStoreSettings(ownerId?: string) {
   }
 }
 
+export async function getPublicUserSettings(ownerId: string) {
+  try {
+    const { data, error } = await supabase
+      .from('user_settings')
+      .select('*')
+      .eq('user_id', ownerId)
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Erro ao buscar configurações públicas:', error);
+    return null;
+  }
+}
+
 export default {
   supabasePublic,
   getPublicProducts,
   getPublicCategories,
-  getPublicStoreSettings
+  getPublicStoreSettings,
+  getPublicUserSettings
 }; 

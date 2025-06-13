@@ -136,7 +136,7 @@ export const validateAndProcessCsv = (csvContent: string): CsvValidationResult =
   const rows = lines.slice(1);
   
   // Processar cada linha
-  rows.forEach((row, rowIndex) => {
+  rows.forEach((row) => {
     // Dividir a linha em colunas
     const cols = row.trim().split(/[;,]/);
     if (cols.length < 3) {

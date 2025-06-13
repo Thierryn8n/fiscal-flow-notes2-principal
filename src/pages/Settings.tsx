@@ -1,117 +1,47 @@
-import { useEffect, useState } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/lib/supabase';
-import { Switch } from '@/components/ui/switch';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useAuth } from '@/contexts/AuthContext';
 import { CompanySettings } from '@/components/settings/CompanySettings';
+import { DeliverySettings } from '@/components/settings/DeliverySettings';
 import { PrinterSettings } from '@/components/settings/PrinterSettings';
-import { EcommerceSettings } from '@/components/settings/EcommerceSettings';
+import { InstallmentSettings } from '@/components/settings/InstallmentSettings';
+import { UserSettings } from '@/types/settings';
+import { loadSettings, saveSettings } from '@/lib/supabaseSettings';
 
-interface UserSettings {
-  id?: string;
-  user_id: string;
-  company_data: {
-    name: string;
-    logo?: string;
-    address?: {
-      street?: string;
-      number?: string;
-      city?: string;
-      state?: string;
-      zipCode?: string;
-    };
-  };
-  printer_settings: {
-    enabled: boolean;
-    default_printer?: string;
-    auto_print: boolean;
-    copies: number;
-  };
-  ecommerce_settings: {
-    enabled: boolean;
-    admin_panel_enabled: boolean;
-  };
-  created_at?: string;
-  updated_at?: string;
-}
-
-const defaultSettings: UserSettings = {
-  user_id: '',
-  company_data: {
-    name: '',
-  },
-  printer_settings: {
-    enabled: false,
-    auto_print: false,
-    copies: 1,
-  },
-  ecommerce_settings: {
-    enabled: false,
-    admin_panel_enabled: false,
-  },
-};
-
-export default function Settings() {
-  const auth = useAuth();
+export const Settings = () => {
   const { toast } = useToast();
-  const [settings, setSettings] = useState<UserSettings>(defaultSettings);
-  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const [settings, setSettings] = useState<UserSettings | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (auth?.user?.id) {
-      loadSettings();
-    }
-  }, [auth?.user?.id]);
-
-  const loadSettings = async () => {
-    if (!auth?.user?.id) return;
-
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('user_settings')
-        .select('*')
-        .eq('user_id', auth.user.id)
-        .single();
-
-      if (error) throw error;
-
-      if (data) {
-        setSettings(data);
-      }
-    } catch (error) {
-      console.error('Erro ao carregar configurações:', error);
-      toast({
-        title: 'Erro',
-        description: 'Não foi possível carregar as configurações.',
-        variant: 'destructive',
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const saveSettings = async () => {
-    if (!auth?.user?.id) return;
-
-    try {
-      const { error } = await supabase
-        .from('user_settings')
-        .upsert({
-          user_id: auth.user.id,
-          ...settings,
+    if (user) {
+      loadSettings(user.id)
+        .then(loadedSettings => {
+          setSettings(loadedSettings);
+          setIsLoading(false);
+        })
+        .catch(error => {
+        console.error('Erro ao carregar configurações:', error);
+        toast({
+          title: 'Erro',
+          description: 'Não foi possível carregar as configurações.',
+          variant: 'destructive',
         });
+          setIsLoading(false);
+        });
+    }
+  }, [user]);
 
-      if (error) throw error;
+  const handleSave = async () => {
+    if (!settings || !user) return;
 
+    try {
+      await saveSettings(settings);
       toast({
         title: 'Sucesso',
-        description: 'Configurações salvas com sucesso.',
+        description: 'Configurações salvas com sucesso!',
       });
     } catch (error) {
       console.error('Erro ao salvar configurações:', error);
@@ -123,47 +53,43 @@ export default function Settings() {
     }
   };
 
-  if (!auth?.user) {
-    return <div>Você precisa estar autenticado para acessar esta página.</div>;
+  if (isLoading) {
+    return <div>Carregando...</div>;
+  }
+
+  if (!settings) {
+    return <div>Nenhuma configuração encontrada.</div>;
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      {loading ? (
-        <div>Carregando...</div>
-      ) : (
-        <Tabs defaultValue="company" className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="company">Empresa</TabsTrigger>
-            <TabsTrigger value="printer">Impressora</TabsTrigger>
-            <TabsTrigger value="ecommerce">E-commerce</TabsTrigger>
-            </TabsList>
+    <div className="container mx-auto py-6 space-y-8">
+      <h1 className="text-2xl font-bold">Configurações</h1>
 
-          <TabsContent value="company">
+      <div className="grid gap-6">
             <CompanySettings
               settings={settings}
               setSettings={setSettings}
-              onSave={saveSettings}
-            />
-          </TabsContent>
-
-          <TabsContent value="printer">
+          onSave={handleSave} 
+        />
+        
+        <DeliverySettings 
+          settings={settings} 
+          setSettings={setSettings} 
+          onSave={handleSave} 
+        />
+        
             <PrinterSettings
               settings={settings}
               setSettings={setSettings}
-              onSave={saveSettings}
+          onSave={handleSave} 
             />
-          </TabsContent>
 
-          <TabsContent value="ecommerce">
-            <EcommerceSettings
+        <InstallmentSettings 
               settings={settings}
               setSettings={setSettings}
-              onSave={saveSettings}
+          onSave={handleSave} 
             />
-          </TabsContent>
-        </Tabs>
-      )}
       </div>
+    </div>
   );
-} 
+};

@@ -1,13 +1,7 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { User, Session, AuthError, AuthResponse } from '@supabase/supabase-js';
-import { JwtExpiredAlert, AuthErrorAlert } from '@/components/ui/ErrorAlert';
 import { useToast } from '@/hooks/use-toast';
-import {
-  Dialog,
-  DialogContent,
-  DialogOverlay
-} from "@/components/ui/dialog";
 import { useNavigate } from 'react-router-dom';
 
 interface AuthContextType {

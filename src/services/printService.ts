@@ -26,15 +26,16 @@ export const PrintService = {
   /**
    * Envia uma solicitação para impressão em outro dispositivo
    */
-  async sendPrintRequest(data: any, copies: number = 1): Promise<void> {
+  async sendPrintRequest(noteId: string, data: any, userId: string, copies: number = 1): Promise<{ success: boolean; error?: string }> {
     try {
       // Em vez de imprimir diretamente, vamos criar uma solicitação de impressão
       // que será processada pelo servidor
       const printRequest = {
+        note_id: noteId,
         note_data: data,
         copies: copies,
         status: 'pending',
-        created_by: (await supabase.auth.getUser()).data.user?.id
+        created_by: userId
       };
 
       const { error } = await supabase
@@ -43,9 +44,13 @@ export const PrintService = {
 
       if (error) throw error;
 
+      return { success: true };
     } catch (error) {
       console.error('Erro ao enviar solicitação de impressão:', error);
-      throw error;
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Erro desconhecido ao enviar solicitação de impressão'
+      };
     }
   },
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Printer, AlertTriangle, CheckCircle, RefreshCw, Ban, Info, Settings, MinusCircle, Eye, EyeOff, Minimize, Maximize } from 'lucide-react';
+import { Printer, RefreshCw, Ban, Info, Settings, EyeOff, Minimize, Maximize } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useDeviceDetect } from '@/hooks/useDeviceDetect';
 import { PrintService, PrintRequest } from '@/services/printService';
@@ -127,41 +127,21 @@ const PrintMonitor: React.FC = () => {
 
   // Função para imprimir
   const handlePrint = useReactToPrint({
-    content: () => printableRef.current,
+    documentTitle: 'Nota Fiscal',
     onBeforeGetContent: () => {
-      if (!currentRequest) {
-        return Promise.reject('Nenhuma solicitação selecionada');
-      }
-      
-      // Show printer reminder toast
-      toast({
-        title: 'Seleção de Impressora',
-        description: `Use a impressora ${currentPrinter} para melhor qualidade de impressão.`,
-      });
-      
-      return Promise.resolve();
+      setIsPrinting(true);
     },
-    onAfterPrint: async () => {
-      if (currentRequest?.id) {
-        await PrintService.markAsPrinted(currentRequest.id);
-        setPrintRequests(prev => prev.filter(req => req.id !== currentRequest.id));
-        toast({
-          title: 'Impressão concluída',
-          description: `Orçamento #${currentRequest.note_id} impresso com sucesso.`,
-        });
-        setCurrentRequest(null);
-      }
+    onAfterPrint: () => {
+      setIsPrinting(false);
     },
-    onPrintError: async () => {
-      if (currentRequest?.id) {
-        await PrintService.markAsError(currentRequest.id, 'Erro ao imprimir');
-        toast({
-          title: 'Erro na impressão',
-          description: `Não foi possível imprimir o orçamento #${currentRequest.note_id}.`,
-          variant: 'error',
-        });
+    pageStyle: `
+      @page {
+        size: A4;
+        margin: 20mm;
       }
-    },
+    `,
+    removeAfterPrint: true,
+    ref: printableRef
   });
 
   const printRequest = (request: PrintRequest) => {

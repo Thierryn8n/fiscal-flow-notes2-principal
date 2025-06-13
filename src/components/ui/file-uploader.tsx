@@ -1,6 +1,6 @@
 import React, { useCallback, useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Image, Loader2, Upload, X } from 'lucide-react';
+import { Image, Loader2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from './button';
 import { BucketType, uploadFile } from '@/services/storageService';
